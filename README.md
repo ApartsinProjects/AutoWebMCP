@@ -33,59 +33,74 @@ The result: interactions that are faster, more reliable, composable, and reusabl
 ### 1. Learn a Web Application
 
 ```
-/learn-webapp https://sites.google.com
+/learn-webapp https://your-app.com
 ```
 
-This explores Google Sites, discovers 23+ operations, and generates a full MCP server.
-You review and approve the tool list before generation.
+The skill explores the app, discovers operations, and generates a full MCP server.
+You review and approve the tool list before generation. The exploration is cautious —
+it asks before clicking anything that could modify data, affect privacy, or trigger
+irreversible actions.
 
 ### 2. Use the WebMCP Router
 
 When you ask Claude to interact with a web app, the WebMCP skill automatically:
 - Checks the catalogue for a matching MCP server
-- Downloads and installs it if needed
-- Routes your request through semantic tools
+- Downloads and installs it from GitHub if needed
+- Creates an execution plan and checks for missing tools
+- Routes your request through semantic MCP tools
 
 ```
-User: "Set the page title to 'My Portfolio' and add a text section about me"
+User: "Update the title and add an intro section"
 
-WebMCP activated for: sites.google.com
-Catalogue match: google-sites — Google Sites
+WebMCP activated for: your-app.com
+
+Catalogue match: your-app — Your App
 MCPs available: 1
-  1. google-sites-mcp v1.0.0 — 23 tools, 88% confidence
-Selected: google-sites-mcp
+  1. your-app-mcp v1.0.0 — 15 tools, 90% confidence
+Selected: your-app-mcp
 Status: installed
 
+Execution plan for: "Update title and add intro"
+| # | Action              | MCP Tool         | Status    |
+|---|---------------------|------------------|-----------|
+| 1 | Set the title       | set_title        | available |
+| 2 | Add intro section   | insert_content   | available |
+
 Execution trace:
-  1. set_page_title(title: "My Portfolio")
-  2. insert_text_box(text: "About me...", style: "normal")
+  1. set_title(value: "My Portfolio")
+  2. insert_content(text: "Welcome to my site")
 2 tools called, 0 errors.
 ```
 
-### 3. Build a Full Page with Chained Tools
+For simple single-tool requests, the plan table is skipped — the tool executes directly.
+
+### 3. Gap Analysis — Learning Missing Tools
+
+If your request needs tools the MCP doesn't have yet:
 
 ```
-User: "Build a landing page for my consulting business"
+Gap analysis: 1 of 3 actions requires tools not in the current MCP
 
-→ set_site_title(title: "Acme Consulting")
-→ set_page_title(title: "Transform Your Business")
-→ insert_text_box(text: "We help companies...", style: "heading")
-→ insert_text_box(text: "Our expertise spans...")
-→ insert_button(name: "Get Started", link: "/contact")
-→ insert_divider()
-→ insert_text_box(text: "Our Services", style: "subheading")
+Missing tools:
+  - "Add a contact form" — no tool for form insertion
+
+Options:
+  a) Learn missing tools first (~2-5 min per tool)
+  b) Skip missing — proceed with available tools only
+  c) Use raw automation for gaps
 ```
+
+Choosing (a) explores the app inline to learn the missing operation, adds it to
+the MCP server, and continues after a restart.
 
 ### 4. Inspect MCP Server Internals
 
 ```
-User: "Show me the scripts for the Google Sites MCP"
-
 → show_scripts()
-
-Returns a list of all JavaScript functions powering the server with their
-names, parameters, and descriptions.
 ```
+
+Every generated MCP server includes a `show_scripts` tool that returns all
+JavaScript functions powering the server — names, parameters, and descriptions.
 
 ## Architecture
 
@@ -99,15 +114,19 @@ User Request
 │  Skill       │            │ match?
 └──────┬───────┘            │
        │              ┌─────▼──────┐
-       │         yes  │ MCP Server │
-       │         ┌───▶│ (learned)  │──────▶ Chrome CDP ──▶ Web App
+       │         yes  │ Plan & Gap │
+       │         ┌───▶│ Analysis   │
+       │         │    └─────┬──────┘
+       │         │          │
+       │         │    ┌─────▼──────┐
+       │         │    │ MCP Server │
+       │         │    │ (learned)  │──────▶ Chrome CDP ──▶ Web App
        │         │    └────────────┘
-       │         │
-       ▼         │    ┌────────────┐
-  ┌────────┐     │    │ Raw Browser│
-  │ Match? │─────┘    │ Automation │──────▶ Chrome CDP ──▶ Web App
-  │        │── no ──▶ └────────────┘
-  └────────┘          (fallback / learn)
+       ▼         │
+  ┌────────┐     │    ┌────────────┐
+  │ Match? │─────┘    │ Raw Browser│
+  │        │── no ──▶ │ or /learn  │──────▶ Chrome CDP ──▶ Web App
+  └────────┘          └────────────┘
 ```
 
 ### Components
@@ -157,25 +176,27 @@ Every generated MCP server supports two environment variables:
 ```
 
 The skill will:
-1. Navigate to the app and map its UI
-2. Explore interactive elements systematically
-3. Infer semantic operations
-4. Present the tool list for your approval (you can add/remove tools)
-5. Generate the MCP server code
-6. Install dependencies and register in the catalogue
+1. Navigate to the app and check for authentication (asks you to log in if needed)
+2. Map the UI structure, including iframe detection
+3. Explore interactive elements cautiously (asks before risky actions)
+4. Infer semantic operations from observed behavior
+5. Present the tool list for your approval (you can add/remove/request tools)
+6. Generate the MCP server code with mode switches and `show_scripts`
+7. Install dependencies and register in the catalogue
 
 ### Step 2: Verify the Generated Server
 
-Check the catalogue:
 ```bash
-node src/utils/repository.mjs list
-node src/utils/repository.mjs info your-app-name
+node src/utils/repository.mjs list          # List all learned MCPs
+node src/utils/repository.mjs info your-app  # Show details + operations
+node --check MCPs/your-app/server/index.mjs  # Syntax check
 ```
 
 ### Step 3: Use It
 
 The WebMCP skill will automatically detect and use the new MCP server whenever
-you interact with the learned application.
+you interact with the learned application. It creates an execution plan, checks
+for missing tools, and reports the result.
 
 ### Step 4: Share It
 
@@ -197,17 +218,17 @@ The `catalogue.json` maps applications to one or more MCP servers:
 ```json
 {
   "version": "2.0.0",
-  "repository": "ApartsinProjects/AutoWebMCP",
+  "repository": "<github-org/repo>",
   "applications": {
-    "google-sites": {
-      "displayName": "Google Sites",
-      "url": "https://sites.google.com",
-      "urlPattern": "sites\\.google\\.com",
+    "<app-name>": {
+      "displayName": "<Human-Readable Name>",
+      "url": "<app-url>",
+      "urlPattern": "<regex>",
       "mcps": [
         {
-          "name": "google-sites-mcp",
+          "name": "<app-name>-mcp",
           "version": "1.0.0",
-          "path": "MCPs/google-sites/server",
+          "path": "MCPs/<app-name>/server",
           "operationCount": 23,
           "confidence": 0.88,
           "generatedAt": "2026-03-08"
@@ -219,6 +240,19 @@ The `catalogue.json` maps applications to one or more MCP servers:
 ```
 
 Multiple MCPs per application are supported for different feature sets or versions.
+The `repository` field is used by WebMCP to fetch the catalogue from GitHub when
+a local match isn't found.
+
+## Key Features
+
+- **Execution planning**: WebMCP creates a plan table before executing, mapping each action to an MCP tool
+- **Gap analysis**: Missing tools are identified before execution — learn them on-demand, skip, or use raw automation
+- **Cautious exploration**: The learning skill assesses risk before clicking, asking the user before potentially harmful actions
+- **Authentication detection**: Detects login redirects and asks the user to authenticate before exploring
+- **Iframe handling**: Discovers and traverses iframes for apps that render content in embedded frames
+- **Error recovery**: Retries once on transient failures, reports clearly on persistent errors
+- **MCP versioning**: Re-learning an app creates a new version alongside the old one
+- **Cross-platform**: Uses Node.js for base64 decoding and path resolution (works on Windows and Unix)
 
 ## License
 
