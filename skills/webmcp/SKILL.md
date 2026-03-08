@@ -199,9 +199,93 @@ haven't been downloaded yet.
 
 ---
 
-## Step 4: Execute the Task
+## Step 4: Plan & Gap Analysis
 
-Once routing is resolved, execute the user's request using the appropriate method:
+**MANDATORY** — Before executing any task, create an execution plan and check for
+missing tools. This step prevents mid-task failures and ensures full MCP coverage.
+
+### 4.1 Create Execution Plan
+
+Break the user's request into a sequence of discrete actions. For each action,
+determine which MCP tool would handle it. Present the plan to the user:
+
+```
+Execution plan for: "<user's request summary>"
+
+| # | Action                          | MCP Tool              | Status    |
+|---|---------------------------------|-----------------------|-----------|
+| 1 | Set the page title              | set_page_title        | available |
+| 2 | Add introduction text           | insert_text_box       | available |
+| 3 | Insert a contact form           | —                     | MISSING   |
+| 4 | Add a map embed                 | insert_embed          | available |
+| 5 | Change background color         | —                     | MISSING   |
+```
+
+### 4.2 Gap Analysis
+
+Compare the plan against the available MCP tools. Identify any actions that have
+**no matching tool** in the current MCP server.
+
+If **all tools are available**: Report the plan and proceed to Step 5 (Execute).
+
+If **tools are missing**: List the gaps and present the user with options:
+
+```
+Gap analysis: 2 of 5 actions require tools not in the current MCP
+
+Missing tools:
+  - "Insert a contact form" — no tool for form insertion
+  - "Change background color" — no tool for background/style changes
+
+Options:
+  a) Learn missing tools first — I'll explore the app to learn these operations
+     and add them to the MCP before proceeding. (~2-5 min per tool)
+  b) Skip missing — proceed with available tools only, skip actions that need
+     missing tools
+  c) Use raw automation for gaps — use MCP tools where available, fall back to
+     browser automation for the missing ones
+```
+
+### 4.3 Handle User Choice
+
+**If user chooses (a) — Learn missing tools**:
+
+1. For each missing tool, activate the learn-webapp skill's Phase 7 (Manual Tool
+   Addition) workflow:
+   - Explore the app to find how the action is performed
+   - Define the operation with selectors and procedure
+   - Validate it works
+   - Add the new function to `commands.mjs`
+   - Register the new tool in `index.mjs`
+   - Update `manifest.json` and `catalogue.json`
+
+2. After all missing tools are learned, re-display the execution plan with all
+   statuses showing "available".
+
+3. Note: If the MCP server is already installed in Claude Code, the new tools
+   will be available immediately (the server re-reads `commands.mjs` on each call).
+   If the server needs a restart, inform the user.
+
+4. Proceed to Step 5 (Execute).
+
+**If user chooses (b) — Skip missing**:
+
+1. Remove the missing-tool actions from the plan.
+2. Inform the user which actions will be skipped.
+3. Proceed to Step 5 (Execute) with the reduced plan.
+
+**If user chooses (c) — Raw automation for gaps**:
+
+1. Mark the missing-tool actions as "raw automation" in the plan.
+2. Proceed to Step 5 (Execute), using MCP tools where available and browser
+   automation (read_page, computer, find, etc.) for the gaps.
+
+---
+
+## Step 5: Execute the Task
+
+Once planning and gap analysis are resolved, execute the user's request using the
+appropriate method:
 
 - **With MCP**: Call the MCP server's tools directly. Chain multiple tool calls
   for complex tasks. The MCP tools handle all the DOM interaction internally.
@@ -209,13 +293,17 @@ Once routing is resolved, execute the user's request using the appropriate metho
 - **Without MCP** (user chose raw automation): Use the Claude in Chrome browser
   tools (read_page, computer, find, etc.) as usual.
 
+- **Mixed mode** (user chose option c in gap analysis): Use MCP tools for covered
+  actions and raw browser automation for the gaps. Clearly indicate in the execution
+  trace which method was used for each action.
+
 ---
 
-## Step 5: Report to User
+## Step 6: Report to User
 
 When the WebMCP skill activates, ALWAYS report the following to the user:
 
-### 5.1 MCP Discovery Report (at activation)
+### 6.1 MCP Discovery Report (at activation)
 
 When the skill first runs, immediately show:
 
@@ -231,7 +319,7 @@ Selected: <mcp-name> (highest confidence)
 Status: <installed | not installed — needs setup | downloading from GitHub>
 ```
 
-### 5.2 Tool Execution Trace (after task completion)
+### 6.2 Tool Execution Trace (after task completion)
 
 After completing the user's request, show a concise execution trace — one line per
 tool call with a summary of the parameters used:
