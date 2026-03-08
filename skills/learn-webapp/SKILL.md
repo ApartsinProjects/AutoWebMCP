@@ -33,6 +33,143 @@ All output goes under: `<PROJECT_ROOT>/MCPs/<APP_NAME>/`
 
 ---
 
+## Phase 0: Ensure Chrome CDP is Available
+
+Before any exploration can begin, verify that Chrome is running with remote debugging
+enabled. The learning skill uses Chrome's DevTools Protocol (CDP) to explore the app.
+
+### 0.1 Test CDP Connectivity
+
+```bash
+curl -s http://127.0.0.1:9222/json/version
+```
+
+If this succeeds (returns JSON with `webSocketDebuggerUrl`), skip to Phase 1.
+
+### 0.2 If CDP is NOT Available — Ask User About Browser Mode
+
+```
+Chrome is not running with remote debugging enabled (CDP port 9222).
+I need to launch Chrome with --remote-debugging-port=9222 to explore the app.
+
+How would you like to run the browser?
+
+  a) User profile — use your existing Chrome profile with all saved
+     credentials, cookies, and logged-in sessions. Best when the app
+     requires authentication.
+
+  b) Sandbox — launch a clean browser with no saved data. You'll need
+     to log in manually. Best for exploring public apps or testing.
+```
+
+Wait for the user's choice before proceeding.
+
+### 0.3 Launch Chrome with CDP
+
+**CRITICAL**: Chrome requires `--user-data-dir` set to a **non-default** directory
+for CDP remote debugging to work. This applies to ALL modes — even "user profile"
+mode needs a separate data directory. The default Chrome profile path
+(`AppData/Local/Google/Chrome/User Data` on Windows) is considered "default" even
+when explicitly passed, and Chrome will refuse to enable CDP with it.
+
+**Solution**: Use a dedicated CDP profile directory. On first use, the user will
+need to sign into their apps once in this profile. After that, credentials persist.
+
+#### Find Chrome
+
+```bash
+# Windows — check common locations:
+#   "C:\Program Files\Google\Chrome\Application\chrome.exe"
+#   "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"
+#   "%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe"
+# Use: where chrome 2>nul || ls "/c/Program Files/Google/Chrome/Application/chrome.exe" 2>/dev/null || ls "/c/Program Files (x86)/Google/Chrome/Application/chrome.exe" 2>/dev/null
+```
+
+#### Kill existing Chrome (if running)
+
+If Chrome is already running, the new instance cannot bind to port 9222.
+Ask the user:
+
+```
+Chrome is already running. It must be fully closed before I can relaunch
+with remote debugging enabled.
+
+Would you like me to kill all Chrome processes now?
+  - Yes — I'll terminate all Chrome instances and relaunch
+  - No — please close Chrome manually and tell me when ready
+```
+
+If the user says **yes**, kill all Chrome processes:
+
+```bash
+# Windows (in bash, use double-slash for flags)
+taskkill //F //IM chrome.exe //T
+
+# macOS
+pkill -f "Google Chrome"
+
+# Linux
+pkill -f chrome
+```
+
+Wait 2 seconds after killing before launching.
+
+#### Launch based on user's mode choice
+
+**Option (a) — User profile (dedicated CDP directory):**
+
+```bash
+# Create the CDP profile directory if it doesn't exist
+mkdir -p "<CDP_PROFILE_DIR>"
+
+# Windows
+start "" "<path-to-chrome>" --remote-debugging-port=9222 --user-data-dir="<CDP_PROFILE_DIR>" --no-first-run --no-default-browser-check --disable-session-crashed-bubble "<TARGET_URL>"
+
+# macOS
+open -a "Google Chrome" --args --remote-debugging-port=9222 --user-data-dir="<CDP_PROFILE_DIR>" --no-first-run --no-default-browser-check --disable-session-crashed-bubble "<TARGET_URL>"
+
+# Linux
+google-chrome --remote-debugging-port=9222 --user-data-dir="<CDP_PROFILE_DIR>" --no-first-run --no-default-browser-check --disable-session-crashed-bubble "<TARGET_URL>" &
+```
+
+Where `<CDP_PROFILE_DIR>` is:
+- Windows: `C:/Users/<username>/AppData/Local/Google/Chrome/CDP-Profile`
+- macOS: `~/Library/Application Support/Google/Chrome/CDP-Profile`
+- Linux: `~/.config/google-chrome/CDP-Profile`
+
+**First-time notice**: If this is a new CDP profile (empty directory), inform the user:
+```
+This is a fresh Chrome profile for CDP automation. You'll need to sign into
+your Google account (or other apps) once in this browser window. After that,
+your credentials will persist in this profile for future sessions.
+```
+
+**Option (b) — Sandbox:**
+
+```bash
+# Windows
+start "" "<path-to-chrome>" --remote-debugging-port=9222 --user-data-dir="%TEMP%/chrome-sandbox-%RANDOM%" --no-first-run --no-default-browser-check --disable-session-crashed-bubble "<TARGET_URL>"
+
+# macOS
+open -a "Google Chrome" --args --remote-debugging-port=9222 --user-data-dir="/tmp/chrome-sandbox-$$" --no-first-run --no-default-browser-check
+
+# Linux
+google-chrome --remote-debugging-port=9222 --user-data-dir="/tmp/chrome-sandbox-$$" --no-first-run --no-default-browser-check &
+```
+
+After launching, wait 3 seconds, then re-test the CDP endpoint. If it still
+fails, inform the user and stop.
+
+### 0.4 Remember the Mode
+
+Store the user's choice for later use in Phase 5 (Code Generation) and Phase 6
+(`.mcp.json` registration):
+
+- **Option (a)**: `DATA_MODE=user`
+- **Option (b)**: `DATA_MODE=sandbox`
+
+---
+
 ## Phase 1: Initialization
 
 1. Parse arguments. If no URL is provided, ask the user for one.
@@ -807,6 +944,59 @@ Result:
   4. Log the error in the exploration log and skip that element
   5. Continue with the next element — don't halt the entire exploration
 - If Chrome CDP connection drops, report the error and ask the user to restart Chrome
+
+### Generated MCP Error Handling
+
+Every generated MCP server should follow these error handling principles:
+
+1. **Errors must propagate back to Claude**: When a tool function fails (selector not
+   found, timeout, unexpected state), it should return a structured error response —
+   NOT silently fail or return empty results. This lets Claude diagnose the problem.
+
+   Generated `commands.mjs` functions should follow this pattern:
+   ```javascript
+   export async function tool_name(params) {
+     const el = querySelector(['.primary-selector', '[aria-label="Fallback"]']);
+     if (!el) {
+       return { success: false, error: 'Element not found',
+                selector: '.primary-selector',
+                hint: 'The app UI may have changed — re-learn this tool' };
+     }
+     // ... execute operation ...
+     return { success: true, result: '...' };
+   }
+   ```
+
+2. **Error categories**: Generated tools should categorize errors to help Claude
+   decide on the right recovery action:
+   - `selector_not_found` — element selectors no longer match the DOM
+   - `timeout` — element exists but didn't reach expected state in time
+   - `state_error` — precondition not met (e.g., wrong page, element not visible)
+   - `cdp_error` — Chrome DevTools Protocol connection issue
+   - `unknown` — unexpected error
+
+3. **Tool-level error wrapping**: The `index.mjs` server should wrap each tool call
+   in a try/catch that returns the error to Claude rather than crashing:
+   ```javascript
+   server.tool("tool_name", "description", schema, async (params) => {
+     try {
+       const result = await page.evaluate(commands.tool_name, params);
+       return { content: [{ type: "text", text: JSON.stringify(result) }] };
+     } catch (err) {
+       return { content: [{ type: "text", text: JSON.stringify({
+         success: false, error: err.message, category: 'cdp_error'
+       })}] };
+     }
+   });
+   ```
+
+4. **Self-healing metadata**: When returning errors, include enough context for the
+   webmcp skill to propose targeted fixes:
+   - Which selector(s) were tried
+   - What page URL/title was active
+   - What the expected vs actual DOM state was
+   This information helps the inline learning workflow (webmcp Step 4.3a / Phase 7)
+   fix the specific broken tool without re-learning everything.
 
 ### Re-Learning / Versioning
 - If an MCP already exists for this app in the catalogue, Phase 1 step 3 presents

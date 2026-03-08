@@ -30,6 +30,149 @@ or use the current working directory if it contains `catalogue.json`.
 
 ---
 
+## Step 0: Ensure Chrome CDP is Available
+
+MCP servers connect to Chrome via the Chrome DevTools Protocol (CDP). Before doing
+anything else, verify that a CDP-enabled Chrome instance is running.
+
+### 0.1 Test CDP Connectivity
+
+Try connecting to the CDP endpoint:
+
+```bash
+curl -s http://127.0.0.1:9222/json/version
+```
+
+If this succeeds (returns JSON with `webSocketDebuggerUrl`), skip to Step 1.
+
+### 0.2 If CDP is NOT Available — Ask User About Browser Mode
+
+If the CDP check fails, ask the user which browser mode to use:
+
+```
+Chrome is not running with remote debugging enabled (CDP port 9222).
+I need to launch Chrome with --remote-debugging-port=9222.
+
+How would you like to run the browser?
+
+  a) User profile — use your existing Chrome profile with all saved
+     credentials, cookies, and logged-in sessions. Best for interacting
+     with apps you're already authenticated to.
+
+  b) Sandbox — launch a clean browser with no saved data. You'll need
+     to log in to any apps manually. Best for testing or exploring apps
+     without touching your personal data.
+```
+
+Wait for the user's choice before proceeding.
+
+### 0.3 Launch Chrome with CDP
+
+**CRITICAL**: Chrome requires `--user-data-dir` set to a **non-default** directory
+for CDP remote debugging to work. This applies to ALL modes — even "user profile"
+mode needs a separate data directory. The default Chrome profile path
+(`AppData/Local/Google/Chrome/User Data` on Windows) is considered "default" even
+when explicitly passed, and Chrome will refuse to enable CDP with it.
+
+**Solution**: Use a dedicated CDP profile directory. On first use, the user will
+need to sign into their apps once in this profile. After that, credentials persist.
+
+#### Find Chrome
+
+```bash
+# Windows — check common locations:
+#   "C:\Program Files\Google\Chrome\Application\chrome.exe"
+#   "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"
+#   "%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe"
+# Use: where chrome 2>nul || ls "/c/Program Files/Google/Chrome/Application/chrome.exe" 2>/dev/null || ls "/c/Program Files (x86)/Google/Chrome/Application/chrome.exe" 2>/dev/null
+```
+
+#### Kill existing Chrome (if running)
+
+If Chrome is already running, the new instance cannot bind to port 9222.
+Ask the user:
+
+```
+Chrome is already running. It must be fully closed before I can relaunch
+with remote debugging enabled.
+
+Would you like me to kill all Chrome processes now?
+  - Yes — I'll terminate all Chrome instances and relaunch
+  - No — please close Chrome manually and tell me when ready
+```
+
+If the user says **yes**, kill all Chrome processes:
+
+```bash
+# Windows (in bash, use double-slash for flags)
+taskkill //F //IM chrome.exe //T
+
+# macOS
+pkill -f "Google Chrome"
+
+# Linux
+pkill -f chrome
+```
+
+Wait 2 seconds after killing before launching.
+
+#### Launch based on user's mode choice
+
+**Option (a) — User profile (dedicated CDP directory):**
+
+```bash
+# Create the CDP profile directory if it doesn't exist
+mkdir -p "<CDP_PROFILE_DIR>"
+
+# Windows
+start "" "<path-to-chrome>" --remote-debugging-port=9222 --user-data-dir="<CDP_PROFILE_DIR>" --no-first-run --no-default-browser-check --disable-session-crashed-bubble "<TARGET_URL>"
+
+# macOS
+open -a "Google Chrome" --args --remote-debugging-port=9222 --user-data-dir="<CDP_PROFILE_DIR>" --no-first-run --no-default-browser-check --disable-session-crashed-bubble "<TARGET_URL>"
+
+# Linux
+google-chrome --remote-debugging-port=9222 --user-data-dir="<CDP_PROFILE_DIR>" --no-first-run --no-default-browser-check --disable-session-crashed-bubble "<TARGET_URL>" &
+```
+
+Where `<CDP_PROFILE_DIR>` is:
+- Windows: `C:/Users/<username>/AppData/Local/Google/Chrome/CDP-Profile`
+- macOS: `~/Library/Application Support/Google/Chrome/CDP-Profile`
+- Linux: `~/.config/google-chrome/CDP-Profile`
+
+**First-time notice**: If this is a new CDP profile (empty directory), inform the user:
+```
+This is a fresh Chrome profile for CDP automation. You'll need to sign into
+your Google account (or other apps) once in this browser window. After that,
+your credentials will persist in this profile for future sessions.
+```
+
+**Option (b) — Sandbox:**
+
+```bash
+# Windows
+start "" "<path-to-chrome>" --remote-debugging-port=9222 --user-data-dir="%TEMP%/chrome-sandbox-%RANDOM%" --no-first-run --no-default-browser-check --disable-session-crashed-bubble "<TARGET_URL>"
+
+# macOS
+open -a "Google Chrome" --args --remote-debugging-port=9222 --user-data-dir="/tmp/chrome-sandbox-$$" --no-first-run --no-default-browser-check
+
+# Linux
+google-chrome --remote-debugging-port=9222 --user-data-dir="/tmp/chrome-sandbox-$$" --no-first-run --no-default-browser-check &
+```
+
+After launching, wait 3 seconds, then re-test the CDP endpoint. If it still
+fails, inform the user and stop.
+
+### 0.4 Set Environment Variables
+
+Based on the user's choice, remember the mode for MCP server config:
+
+- **Option (a)**: `BROWSER_MODE=visible`, `DATA_MODE=user`
+- **Option (b)**: `BROWSER_MODE=visible`, `DATA_MODE=sandbox`
+
+These values are used when registering MCP servers in `.mcp.json`.
+
+---
+
 ## Step 1: Identify the Target Application
 
 Determine which web application the user wants to interact with:
@@ -424,3 +567,70 @@ If any tool call failed, mark it with an error indicator:
    - **Timeout**: The page may be slow. Retry once with a longer timeout. If it
      fails again, report the error.
    - Never retry more than once. After one retry failure, stop and report.
+
+8. **Systematic error tracking & MCP update proposals**: Track errors across the
+   entire execution of the user's task. After the task completes (or is blocked),
+   analyze the error pattern and propose MCP updates if warranted.
+
+   **Error tracking**: During execution, maintain a mental log of every tool error:
+   ```
+   errors: [
+     { tool: "tool_name", error: "error message", category: "selector|timeout|cdp|state" }
+   ]
+   ```
+
+   **After task execution**, if there were errors, add an **Error Analysis** section
+   to the execution trace (Step 6.2):
+
+   ```
+   Execution trace:
+     1. tool_a(param: "value") ✓
+     2. tool_b(param: "value") ← ERROR: Element not found
+     3. tool_c(param: "value") ✓
+     4. tool_d(param: "value") ← ERROR: Timeout waiting for element
+
+   4 tools called, 2 errors.
+
+   Error analysis:
+     - tool_b: Selector not found — the app's UI may have changed for this element
+     - tool_d: Timeout — element may have been redesigned or moved
+
+   ⚠ 2 of 4 tools failed. I recommend updating the MCP server to fix these tools.
+   ```
+
+   **Propose MCP update when**:
+   - **2+ tools fail** during a single task execution
+   - **The same tool fails consistently** (fails on retry too)
+   - **Errors suggest UI changes** (selector not found, element structure changed)
+   - **Critical tools fail** (tools central to the user's workflow)
+
+   **How to propose**:
+   ```
+   Some MCP tools encountered errors that suggest the app's UI may have changed
+   since the MCP was last learned.
+
+   Failed tools:
+     - tool_b: <error description>
+     - tool_d: <error description>
+
+   Would you like me to:
+     a) Fix these tools now — I'll explore the app, find the updated selectors,
+        and patch the MCP server (requires restart after)
+     b) Re-validate all tools — run a full validation pass on every tool in the
+        MCP to find all broken ones at once (/learn-webapp <url> → option c)
+     c) Skip for now — continue without these tools
+   ```
+
+   **If user chooses (a)**: For each failed tool, follow the Step 4.3(a) inline
+   learning workflow — explore the app, find the correct selectors, update
+   `commands.mjs`, `index.mjs`, and `manifest.json`. After fixing, inform the user
+   to restart Claude Code.
+
+   **If user chooses (b)**: Suggest running `/learn-webapp <url>` and choosing
+   option (c) "Validate & fix" from the re-learning menu.
+
+   **If user chooses (c)**: Note the broken tools in the execution report and move on.
+
+   **Single-error handling**: If only 1 tool fails and it's not blocking the user's
+   task, just report it in the execution trace — no need to propose a full MCP update.
+   But if that 1 tool failure blocks task completion, propose fix option (a) immediately.
