@@ -11,7 +11,7 @@ description: >
   "update the site", or any task involving a web application that may have a learned MCP.
 user-invocable: true
 argument-hint: [url-or-app-name]
-allowed-tools: Read, Glob, Grep, Bash
+allowed-tools: Read, Glob, Grep, Bash, Edit, Write, mcp__*
 ---
 
 # WebMCP — Runtime Routing Skill
@@ -75,11 +75,16 @@ entry's `urlPattern` (regex match) or `url` (substring match).
 
 ### 2.2 Remote Catalogue (if local miss)
 
-If no match is found locally, try fetching the catalogue from GitHub:
+If no match is found locally, try fetching the catalogue from GitHub. Read the
+`repository` field from the **local** `catalogue.json` to determine the GitHub repo:
 
 ```bash
-gh api repos/ApartsinProjects/AutoWebMCP/contents/catalogue.json -q .content | base64 -d
+# Read the repo name dynamically from catalogue.json
+REPO=$(node -e "console.log(JSON.parse(require('fs').readFileSync('<PROJECT_ROOT>/catalogue.json','utf-8')).repository)")
+gh api "repos/$REPO/contents/catalogue.json" -q .content | base64 -d
 ```
+
+If there is no local `catalogue.json` or no `repository` field, skip the remote check.
 
 Parse the result and check for a match. This finds MCPs contributed by others that
 haven't been downloaded yet.
@@ -98,13 +103,18 @@ haven't been downloaded yet.
    - If files exist locally, skip to step 4
 
 3. **Download from GitHub** (if not local):
+   Read the `repository` field from `catalogue.json` to get the GitHub repo name,
+   then download:
    ```bash
-   # Create local cache directory
+   # Read repo name from catalogue.json
+   REPO=$(node -e "console.log(JSON.parse(require('fs').readFileSync('<PROJECT_ROOT>/catalogue.json','utf-8')).repository)")
+
+   # Create local directory
    mkdir -p "<PROJECT_ROOT>/<mcp.path>"
 
    # Download server files from GitHub
    cd "<PROJECT_ROOT>/<mcp.path>"
-   gh api repos/ApartsinProjects/AutoWebMCP/contents/<mcp.path> \
+   gh api "repos/$REPO/contents/<mcp.path>" \
      --jq '.[].download_url' | while read url; do
        curl -sLO "$url"
      done
@@ -163,19 +173,24 @@ haven't been downloaded yet.
    take effect.
 
 8. **If installed and running**: Proceed with the user's task using ONLY the MCP
-   server's tools. Map the user's natural language request to the appropriate tool
-   calls. For example:
+   server's tools. Read the manifest to discover available tools, then map the
+   user's natural language request to the appropriate tool calls.
 
-   | User says...                          | Use tool...                              |
+   Generic mapping pattern — match user intent to MCP tool names:
+
+   | User intent                           | Look for tool like...                    |
    |---------------------------------------|------------------------------------------|
-   | "Set the title to X"                  | `set_page_title({ title: "X" })`        |
-   | "Add a text section with Y"           | `insert_text_box({ text: "Y" })`        |
-   | "Insert a button linking to Z"        | `insert_button({ name: "...", link: "Z" })` |
-   | "Add a new page called W"             | `add_page({ name: "W" })`               |
-   | "Change the theme"                    | `set_theme({ theme: "..." })`           |
+   | "Set/change/update X to Y"            | `set_X({ value: "Y" })`                |
+   | "Add/insert/create X"                 | `insert_X(...)` or `create_X(...)`      |
+   | "Delete/remove X"                     | `delete_X(...)` or `remove_X(...)`      |
+   | "Search/find X"                       | `search({ query: "X" })`               |
+   | "List/show all X"                     | `list_X()` or `get_X()`                |
+   | "Send/submit X"                       | `send_X(...)` or `submit_X(...)`        |
    | "Undo that"                           | `undo()`                                 |
-   | "Show me a preview"                   | `preview_site()`                         |
    | "Show me the scripts"                 | `show_scripts()`                         |
+
+   Always check `show_scripts()` or the manifest to see the **actual** tool names
+   available for the specific app — tool names are app-specific and vary by MCP.
 
    **CRITICAL**: Do NOT fall back to raw browser clicks/typing for operations that
    have a matching MCP tool. Only use raw browser automation for operations that
@@ -210,21 +225,26 @@ haven't been downloaded yet.
 **MANDATORY** — Before executing any task, create an execution plan and check for
 missing tools. This step prevents mid-task failures and ensures full MCP coverage.
 
+**Simple-request shortcut**: If the user's request maps to a **single MCP tool call**
+(e.g., "set the title to X"), skip the plan table — just execute the tool directly
+and report the result. The full plan table is only needed for multi-step requests
+(2+ actions).
+
 ### 4.1 Create Execution Plan
 
-Break the user's request into a sequence of discrete actions. For each action,
-determine which MCP tool would handle it. Present the plan to the user:
+For multi-step requests, break the user's request into a sequence of discrete
+actions. For each action, determine which MCP tool would handle it. Present the
+plan to the user:
 
 ```
 Execution plan for: "<user's request summary>"
 
 | # | Action                          | MCP Tool              | Status    |
 |---|---------------------------------|-----------------------|-----------|
-| 1 | Set the page title              | set_page_title        | available |
-| 2 | Add introduction text           | insert_text_box       | available |
-| 3 | Insert a contact form           | —                     | MISSING   |
-| 4 | Add a map embed                 | insert_embed          | available |
-| 5 | Change background color         | —                     | MISSING   |
+| 1 | <action description>            | <matched_tool_name>   | available |
+| 2 | <action description>            | <matched_tool_name>   | available |
+| 3 | <action description>            | —                     | MISSING   |
+| 4 | <action description>            | <matched_tool_name>   | available |
 ```
 
 ### 4.2 Gap Analysis
@@ -256,23 +276,27 @@ Options:
 
 **If user chooses (a) — Learn missing tools**:
 
-1. For each missing tool, activate the learn-webapp skill's Phase 7 (Manual Tool
-   Addition) workflow:
-   - Explore the app to find how the action is performed
-   - Define the operation with selectors and procedure
-   - Validate it works
-   - Add the new function to `commands.mjs`
-   - Register the new tool in `index.mjs`
-   - Update `manifest.json` and `catalogue.json`
+1. For each missing tool, follow the learn-webapp Phase 7 (Manual Tool Addition)
+   workflow directly — do NOT invoke `/learn-webapp` as a separate skill; instead
+   execute Phase 7's steps inline:
+   a. Navigate to the app in the browser (if not already there)
+   b. Explore: locate the UI elements needed for the missing operation
+   c. Define the operation (name, description, parameters, procedure, selectors)
+   d. Validate: execute the procedure at least once to confirm it works
+   e. Append the new function to `<PROJECT_ROOT>/MCPs/<APP_NAME>/server/commands.mjs`
+   f. Add the new tool registration to `<PROJECT_ROOT>/MCPs/<APP_NAME>/server/index.mjs`
+   g. Update `manifest.json` (add operation, increment count)
+   h. Update `catalogue.json` (bump `operationCount`)
 
 2. After all missing tools are learned, re-display the execution plan with all
    statuses showing "available".
 
-3. Note: If the MCP server is already installed in Claude Code, the new tools
-   will be available immediately (the server re-reads `commands.mjs` on each call).
-   If the server needs a restart, inform the user.
+3. **IMPORTANT**: After modifying `commands.mjs` and `index.mjs`, the MCP server
+   process must be **restarted** for changes to take effect. Inform the user:
+   "New tools added. Please restart Claude Code (or restart the MCP server)
+   for the new tools to become available, then I'll continue with your request."
 
-4. Proceed to Step 5 (Execute).
+4. After restart confirmation, proceed to Step 5 (Execute).
 
 **If user chooses (b) — Skip missing**:
 
@@ -332,18 +356,16 @@ tool call with a summary of the parameters used:
 
 ```
 Execution trace:
-  1. set_page_title(title: "My Portfolio")
-  2. insert_text_box(text: "Welcome to my site", style: "heading")
-  3. insert_text_box(text: "I am a software engineer...")
-  4. insert_button(name: "Contact Me", link: "mailto:me@example.com")
-  5. insert_divider()
+  1. tool_a(param: "value")
+  2. tool_b(param: "value")
+  3. tool_c(param1: "x", param2: "y")
 
-5 tools called, 0 errors.
+3 tools called, 0 errors.
 ```
 
 If any tool call failed, mark it with an error indicator:
 ```
-  3. insert_embed(url: "https://...") ← ERROR: Element not found
+  2. tool_b(param: "value") ← ERROR: Element not found
 ```
 
 ---
@@ -357,9 +379,9 @@ If any tool call failed, mark it with an error indicator:
    Never substitute raw clicks for a learned operation without telling the user.
 
 3. **Composability**: For complex tasks, break them into a sequence of MCP tool
-   calls. For example, "build a landing page" becomes:
-   - `set_site_title(...)` + `set_page_title(...)` + `insert_text_box(...)` ×N
-   + `insert_button(...)` + `insert_divider(...)` etc.
+   calls. Check available tools via `show_scripts()` or the manifest, then chain
+   the appropriate calls in order. For example, a multi-step task becomes:
+   - `tool_A(...)` + `tool_B(...)` + `tool_C(...)` etc.
 
 4. **Coverage gaps**: If the MCP server doesn't have a tool for something the
    user needs, note it and offer to add it via `/learn-webapp` with "add tool".
@@ -372,3 +394,14 @@ If any tool call failed, mark it with an error indicator:
    If multiple exist, prefer the one with highest confidence and most operations.
    You can use tools from different MCPs for the same app if they cover different
    capabilities.
+
+7. **Error recovery**: If an MCP tool call fails:
+   - **Selector not found**: The app's UI may have changed. Report the error and
+     suggest re-learning the operation via Phase 7.
+   - **Page not loaded**: Verify the app is open in Chrome and the URL matches.
+     Navigate to the correct URL and retry once.
+   - **CDP connection error**: Check that Chrome is running with
+     `--remote-debugging-port=9222`. Report the error.
+   - **Timeout**: The page may be slow. Retry once with a longer timeout. If it
+     fails again, report the error.
+   - Never retry more than once. After one retry failure, stop and report.

@@ -8,7 +8,7 @@ description: >
   "derive operations from this app", "automate this web app".
 user-invocable: true
 argument-hint: <url> [app-name]
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Agent
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Agent, mcp__*
 ---
 
 # Learn Web Application — MCP Server Derivation Skill
@@ -199,12 +199,48 @@ After exploring individual elements, look for multi-step workflows:
 3. Trace the full workflow: trigger → fill/interact → confirm/submit → result
 4. Record the complete workflow as a sequence of explorations
 
+### Iframe Handling
+
+Many web apps render content inside iframes (e.g., Google Sites editor, embedded
+editors, sandboxed widgets). During reconnaissance:
+
+1. Check for iframes: look for `iframe`, `[role="document"]` inside frames
+2. If the main content area is inside an iframe, note this — generated commands
+   will need to target the iframe's content document, not the top-level page
+3. Use `javascript_tool` or `preview_eval` to enumerate iframes:
+   ```javascript
+   Array.from(document.querySelectorAll('iframe')).map(f => ({
+     src: f.src, id: f.id, name: f.name,
+     hasContent: !!f.contentDocument
+   }))
+   ```
+4. Record which elements live inside which iframe in the exploration log
+5. Generated `commands.mjs` functions should handle iframe traversal when needed
+
+### Authentication Detection
+
+Before starting exploration, check if the app requires authentication:
+
+1. After navigating to `TARGET_URL`, check for signs of auth redirects:
+   - URL changed to a login/OAuth page (different domain or `/login`, `/auth` path)
+   - Page contains login form elements (`input[type="password"]`, "Sign in" buttons)
+2. If auth is detected and `DATA_MODE` is `"user"` (default):
+   - Ask the user to log in manually in the browser
+   - Wait for them to confirm they've logged in
+   - Verify by checking the URL matches `TARGET_URL` again
+3. If auth is detected and `DATA_MODE` is `"sandbox"`:
+   - Report that the app requires authentication and sandbox mode cannot proceed
+   - Suggest switching to `DATA_MODE=user`
+
 ### Exploration Budget
 
 - Explore at minimum 15-20 interactive elements
 - Explore at minimum 2-3 complete multi-step workflows
 - Stop when you've covered all major regions and primary actions
 - Skip purely decorative or repetitive elements (e.g., 50 identical list items — explore 1-2)
+- **Time budget**: Aim to complete exploration within 30-60 tool calls. If the app
+  is very complex, focus on the most important regions first and note unexplored
+  areas in the report.
 
 ---
 
@@ -339,8 +375,8 @@ Display a numbered table of all inferred operations:
 
 | # | Tool Name            | Description                                      |
 |---|----------------------|--------------------------------------------------|
-| 1 | set_site_title       | Set the site title shown in the browser tab       |
-| 2 | insert_text_box      | Insert a text box with optional content           |
+| 1 | <tool_name>          | <what this tool does>                             |
+| 2 | <tool_name>          | <what this tool does>                             |
 | ...                                                                        |
 ```
 
@@ -462,8 +498,10 @@ Every generated MCP server MUST support two independent mode switches via enviro
 | headless | sandbox | CI/testing — fully isolated, no credentials, no UI |
 
 The generated `index.mjs` should read these from `process.env` and implement the
-corresponding `getPage()` connection logic. See `<PROJECT_ROOT>/MCPs/google-sites/server/index.mjs`
-for a reference implementation.
+corresponding `getPage()` connection logic. If a previously generated MCP server
+exists under `<PROJECT_ROOT>/MCPs/` (e.g., from a different app), use it as a
+reference implementation for the connection logic pattern. Otherwise, use the
+template at `<PROJECT_ROOT>/src/templates/mcp-server-template.mjs`.
 
 #### 5.3.2 ShowScripts Tool (Mandatory)
 
@@ -685,6 +723,23 @@ Result:
 - Include clear descriptions that an LLM can use for tool selection
 - Set realistic confidence scores — don't inflate them
 - Only include operations that pass validation
+
+### Error Recovery
+- If an interaction causes an unexpected page state (error page, crash, redirect):
+  1. Take a screenshot to document what happened
+  2. Try navigating back to `TARGET_URL`
+  3. If the app is unresponsive, reload the page
+  4. Log the error in the exploration log and skip that element
+  5. Continue with the next element — don't halt the entire exploration
+- If Chrome CDP connection drops, report the error and ask the user to restart Chrome
+
+### Re-Learning / Versioning
+- If an MCP already exists for this app in the catalogue:
+  - The new MCP version will be added alongside the existing one in `mcps` array
+  - Bump the version number (e.g., `1.0.0` → `2.0.0`)
+  - The old version remains available for rollback
+  - Users can choose which version to use in their MCP config
+- Always check for an existing MCP before creating a new one and inform the user
 
 ### Context Management
 - Save exploration data incrementally (don't hold everything in memory)
