@@ -1,0 +1,21 @@
+{
+  "name": "{{APP_NAME}}-mcp",
+  "version": "1.0.0",
+  "description": "Auto-generated MCP server for {{APP_NAME}} — provides semantic operations for browser automation",
+  "type": "module",
+  "main": "index.mjs",
+  "scripts": {
+    "start": "node index.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "puppeteer-core": "^24.6.0",
+    "zod": "^3.24.4"
+  },
+  "autowebmcp": {
+    "targetUrl": "{{TARGET_URL}}",
+    "urlPattern": "{{URL_PATTERN}}",
+    "generatedAt": "{{TIMESTAMP}}",
+    "frameworkVersion": "0.1.0"
+  }
+}

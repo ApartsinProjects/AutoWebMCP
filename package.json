@@ -1,0 +1,17 @@
+{
+  "name": "autowebmcp",
+  "version": "0.1.0",
+  "description": "Framework for deriving reusable MCP servers from interaction-heavy web applications",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "repo:list": "node src/utils/repository.mjs list",
+    "repo:info": "node src/utils/repository.mjs info"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "puppeteer-core": "^24.6.0",
+    "zod": "^3.24.4"
+  }
+}

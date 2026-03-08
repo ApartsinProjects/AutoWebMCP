@@ -1,0 +1,121 @@
+{
+  "appName": "google-sites",
+  "url": "https://sites.google.com/new",
+  "editorUrl": "https://sites.google.com/d/{siteId}/p/{pageId}/edit",
+  "timestamp": "2026-03-08T12:00:00Z",
+  "regions": [
+    {
+      "id": "top-bar",
+      "label": "Top toolbar",
+      "type": "actions",
+      "description": "Site title, undo/redo, preview, share, settings, more, publish"
+    },
+    {
+      "id": "canvas-header",
+      "label": "Page header section",
+      "type": "content",
+      "description": "Hero banner with site name, page title, header image controls"
+    },
+    {
+      "id": "canvas-body",
+      "label": "Page body",
+      "type": "content",
+      "description": "Main content area where sections and elements are placed"
+    },
+    {
+      "id": "sidebar-insert",
+      "label": "Insert panel",
+      "type": "panel",
+      "description": "Text box, Images, Embed, Drive, content blocks, collapsible group, TOC, carousel, button, divider, spacer, social links, placeholder, YouTube, calendar, map"
+    },
+    {
+      "id": "sidebar-pages",
+      "label": "Pages panel",
+      "type": "panel",
+      "description": "Page tree with filter, add page button"
+    },
+    {
+      "id": "sidebar-themes",
+      "label": "Themes panel",
+      "type": "panel",
+      "description": "Theme selector (Simple, Aristotle, Diplomat, Vision...), color swatches, font style dropdown, custom theme creation"
+    },
+    {
+      "id": "settings-dialog",
+      "label": "Settings modal",
+      "type": "form",
+      "description": "Navigation (mode, color), Brand images, Viewer tools, Custom domains, Analytics, Announcement banner"
+    }
+  ],
+  "explorations": [
+    {
+      "id": "exp-1",
+      "element": "Page title text",
+      "action": "click",
+      "result": "Reveals rich text toolbar: style (Title), font (Lato-Light), size (64), B/I/U, text color, link, emoji, alignment, duplicate, delete, more. Also shows Image dropdown and Header type at bottom of header section."
+    },
+    {
+      "id": "exp-2",
+      "element": "Insert > Text box",
+      "action": "click",
+      "result": "Inserts an empty text box in the body with cursor. Toolbar shows: Normal text style, font (Lato), size (11), B/I/U, color, link, emoji, alignment, ordered list, unordered list, duplicate, delete, more."
+    },
+    {
+      "id": "exp-3",
+      "element": "Text typing in text box",
+      "action": "type 'Test content paragraph'",
+      "result": "Text appears in the text box. Confirmed in Preview mode."
+    },
+    {
+      "id": "exp-4",
+      "element": "Insert > Button",
+      "action": "click",
+      "result": "Opens 'Insert button' dialog with Name (0/120 chars), Link fields, Cancel/Insert buttons."
+    },
+    {
+      "id": "exp-5",
+      "element": "Insert > Embed",
+      "action": "click",
+      "result": "Opens 'Embed from the web' dialog with two tabs: 'By URL' (URL input) and 'Embed code', plus Cancel/Insert buttons."
+    },
+    {
+      "id": "exp-6",
+      "element": "Preview button",
+      "action": "click",
+      "result": "Enters Preview mode showing rendered site. Bottom bar has device toggles (phone/tablet/desktop), report button, close (X). Back arrow exits preview."
+    },
+    {
+      "id": "exp-7",
+      "element": "Pages tab",
+      "action": "click",
+      "result": "Shows page tree with Home page. Filter pages input at top. + button at bottom for new pages."
+    },
+    {
+      "id": "exp-8",
+      "element": "New page button",
+      "action": "click",
+      "result": "Opens 'New page' popover with Name field, Advanced dropdown, Done button."
+    },
+    {
+      "id": "exp-9",
+      "element": "Themes tab",
+      "action": "click",
+      "result": "Shows CUSTOM section (create/upload), CREATED BY GOOGLE section with themes (Simple selected, Aristotle, Diplomat, Vision...), color swatches (blue/pink/green/purple/dark/black/custom), font style dropdown."
+    },
+    {
+      "id": "exp-10",
+      "element": "Settings button",
+      "action": "click",
+      "result": "Opens Settings modal with sections: Navigation (Mode: Top dropdown, Color: Transparent dropdown), Brand images, Viewer tools, Custom domains, Analytics, Announcement banner."
+    }
+  ],
+  "inferredOperations": [
+    "set_site_title", "set_page_title", "insert_text_box", "set_text_content",
+    "format_text", "insert_button", "insert_embed", "insert_divider",
+    "insert_spacer", "insert_image", "add_page", "delete_page",
+    "rename_page", "set_theme", "set_theme_color", "set_font_style",
+    "preview_site", "undo", "redo", "delete_section",
+    "duplicate_section", "set_header_type", "set_navigation_mode",
+    "set_navigation_color", "publish_site"
+  ]
+}

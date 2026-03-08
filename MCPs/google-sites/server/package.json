@@ -1,0 +1,25 @@
+{
+  "name": "google-sites-mcp",
+  "version": "1.0.0",
+  "description": "Auto-generated MCP server for Google Sites — semantic operations for site editing",
+  "type": "module",
+  "main": "index.mjs",
+  "scripts": {
+    "start": "node index.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "puppeteer-core": "^24.6.0",
+    "zod": "^3.24.4"
+  },
+  "autowebmcp": {
+    "targetUrl": "https://sites.google.com",
+    "urlPattern": "sites\\.google\\.com",
+    "generatedAt": "2026-03-08",
+    "frameworkVersion": "0.1.0",
+    "modes": {
+      "browser": ["visible", "headless"],
+      "data": ["user", "sandbox"]
+    }
+  }
+}

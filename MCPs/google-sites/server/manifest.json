@@ -1,0 +1,47 @@
+{
+  "name": "google-sites-mcp",
+  "version": "1.0.0",
+  "description": "MCP server providing semantic operations for Google Sites editor",
+  "targetApp": {
+    "name": "Google Sites",
+    "url": "https://sites.google.com",
+    "urlPattern": "sites\\.google\\.com"
+  },
+  "modes": {
+    "browser": {
+      "visible": "Attach to user's running Chrome via CDP (default)",
+      "headless": "Launch a headless browser instance"
+    },
+    "data": {
+      "user": "Use user's Chrome profile with credentials and stored data (default)",
+      "sandbox": "Use a clean browser profile with no stored data"
+    }
+  },
+  "operations": [
+    { "name": "health_check", "description": "Check connectivity to Google Sites editor", "category": "data_retrieval", "confidence": 0.99 },
+    { "name": "set_site_title", "description": "Set the site title (browser tab and header)", "category": "data_entry", "confidence": 0.90 },
+    { "name": "set_page_title", "description": "Set the page title in the hero section", "category": "data_entry", "confidence": 0.85 },
+    { "name": "insert_text_box", "description": "Insert a new text box with optional content", "category": "content_editing", "confidence": 0.90 },
+    { "name": "set_text_content", "description": "Replace content of selected text element", "category": "content_editing", "confidence": 0.85 },
+    { "name": "format_text", "description": "Apply bold/italic/underline to selected text", "category": "content_editing", "confidence": 0.90 },
+    { "name": "insert_button", "description": "Insert a button with label and link", "category": "content_editing", "confidence": 0.85 },
+    { "name": "insert_embed", "description": "Embed external content by URL or HTML code", "category": "content_editing", "confidence": 0.80 },
+    { "name": "insert_divider", "description": "Insert a horizontal divider line", "category": "content_editing", "confidence": 0.95 },
+    { "name": "insert_spacer", "description": "Insert vertical spacing", "category": "content_editing", "confidence": 0.95 },
+    { "name": "insert_image", "description": "Open the image picker to insert an image", "category": "content_editing", "confidence": 0.80 },
+    { "name": "add_page", "description": "Add a new page to the site", "category": "workflow", "confidence": 0.85 },
+    { "name": "list_pages", "description": "List all pages in the current site", "category": "data_retrieval", "confidence": 0.85 },
+    { "name": "set_theme", "description": "Change site theme (Simple, Aristotle, Diplomat, Vision...)", "category": "workflow", "confidence": 0.75 },
+    { "name": "undo", "description": "Undo the last editing action", "category": "navigation", "confidence": 0.95 },
+    { "name": "redo", "description": "Redo the last undone action", "category": "navigation", "confidence": 0.95 },
+    { "name": "preview_site", "description": "Enter preview mode", "category": "navigation", "confidence": 0.95 },
+    { "name": "exit_preview", "description": "Exit preview mode", "category": "navigation", "confidence": 0.90 },
+    { "name": "delete_section", "description": "Delete the currently selected section", "category": "content_editing", "confidence": 0.85 },
+    { "name": "duplicate_section", "description": "Duplicate the currently selected section", "category": "content_editing", "confidence": 0.85 },
+    { "name": "open_settings", "description": "Open site settings dialog", "category": "navigation", "confidence": 0.95 },
+    { "name": "get_site_info", "description": "Get site title, page title, save status, URL", "category": "data_retrieval", "confidence": 0.85 },
+    { "name": "list_insert_options", "description": "List available insert options from sidebar", "category": "data_retrieval", "confidence": 0.80 }
+  ],
+  "generatedAt": "2026-03-08",
+  "frameworkVersion": "0.1.0"
+}

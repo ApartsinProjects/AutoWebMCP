@@ -1,0 +1,21 @@
+{
+  "version": "2.0.0",
+  "repository": "ApartsinProjects/AutoWebMCP",
+  "applications": {
+    "google-sites": {
+      "displayName": "Google Sites",
+      "url": "https://sites.google.com",
+      "urlPattern": "sites\\.google\\.com",
+      "mcps": [
+        {
+          "name": "google-sites-mcp",
+          "version": "1.0.0",
+          "path": "MCPs/google-sites/server",
+          "operationCount": 23,
+          "confidence": 0.88,
+          "generatedAt": "2026-03-08"
+        }
+      ]
+    }
+  }
+}
