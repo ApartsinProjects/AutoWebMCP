@@ -87,18 +87,21 @@ async function getPage() {
 }
 
 // --- Command Execution Helper ---
+// Dynamically injects ALL exported functions from commands.mjs into the browser
+// context via page.evaluate(). This ensures every helper function (utility or
+// app-specific) is available to every tool — no hardcoded list to maintain.
+
+const _helperSource = Object.entries(commands)
+  .filter(([, v]) => typeof v === "function")
+  .map(([, fn]) => fn.toString())
+  .join("\n");
 
 async function exec(fnBody, params = {}) {
   try {
     const p = await getPage();
     const result = await p.evaluate(
       new Function("params", `
-        ${commands.querySelector.toString()}
-        ${commands.querySelectorAll.toString()}
-        ${commands.waitForElement.toString()}
-        ${commands.waitForRemoval.toString()}
-        ${commands.setInputValue.toString()}
-        ${commands.sleep.toString()}
+        ${_helperSource}
         ${fnBody.toString().replace(/^async function \w+/, 'async function fn')}
         return fn(params);
       `),
@@ -109,7 +112,13 @@ async function exec(fnBody, params = {}) {
     };
   } catch (error) {
     return {
-      content: [{ type: "text", text: JSON.stringify({ success: false, error: error.message }) }],
+      content: [{ type: "text", text: JSON.stringify({
+        success: false,
+        error: error.message,
+        category: error.message.includes("not found") ? "selector_not_found"
+          : error.message.includes("timeout") ? "timeout"
+          : "cdp_error"
+      }) }],
       isError: true,
     };
   }

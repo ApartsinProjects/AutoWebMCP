@@ -69,17 +69,49 @@ async function getPage() {
 }
 
 // --- Command Execution Helper ---
+// Dynamically injects ALL exported functions from commands.mjs into the browser
+// context via page.evaluate(). This ensures every helper function (utility or
+// app-specific) is available to every tool — no hardcoded list to maintain.
 
-async function executeCommand(fn, params) {
+// Build the helper source code ONCE at startup
+const _helperSource = Object.entries(commands)
+  .filter(([, v]) => typeof v === "function")
+  .map(([, fn]) => fn.toString())
+  .join("\n");
+
+async function exec(fn, params = {}) {
   try {
     const p = await getPage();
-    const result = await p.evaluate(fn, params);
+    const result = await p.evaluate(
+      new Function(
+        "params",
+        `
+        ${_helperSource}
+        ${fn.toString().replace(/^async function \w+/, "async function fn")}
+        return fn(params);
+      `
+      ),
+      params
+    );
     return {
       content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
     };
   } catch (error) {
     return {
-      content: [{ type: "text", text: JSON.stringify({ success: false, error: error.message }) }],
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            success: false,
+            error: error.message,
+            category: error.message.includes("not found")
+              ? "selector_not_found"
+              : error.message.includes("timeout")
+              ? "timeout"
+              : "cdp_error",
+          }),
+        },
+      ],
       isError: true,
     };
   }
@@ -166,7 +198,7 @@ server.tool(
 //     param2: z.number().optional().describe("Optional param2"),
 //   },
 //   async ({ param1, param2 }) => {
-//     return await executeCommand(commands.operation_name, { param1, param2 });
+//     return await exec(commands.operation_name, { param1, param2 });
 //   }
 // );
 //

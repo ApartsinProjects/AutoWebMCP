@@ -76,14 +76,14 @@ export function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function clickByAriaLabel(label) {
+export function clickByAriaLabel(label) {
   const el = document.querySelector(`[aria-label="${label}"]`);
   if (!el) return false;
   el.click();
   return true;
 }
 
-function findButtonByText(text) {
+export function findButtonByText(text) {
   const buttons = document.querySelectorAll("button");
   for (const btn of buttons) {
     if (btn.textContent.trim() === text) return btn;
@@ -91,7 +91,7 @@ function findButtonByText(text) {
   return null;
 }
 
-function clickSidebarTab(tabName) {
+export function clickSidebarTab(tabName) {
   const tabs = document.querySelectorAll('[role="tab"]');
   for (const tab of tabs) {
     if (tab.textContent.trim() === tabName) {
@@ -102,7 +102,7 @@ function clickSidebarTab(tabName) {
   return false;
 }
 
-function clickMenuItem(itemText) {
+export function clickMenuItem(itemText) {
   const items = document.querySelectorAll('[role="menuitem"]');
   for (const item of items) {
     if (item.textContent.trim().toLowerCase().includes(itemText.toLowerCase())) {
