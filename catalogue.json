@@ -9,11 +9,20 @@
       "mcps": [
         {
           "name": "google-sites-mcp",
+          "version": "2.0.0",
+          "path": "MCPs/google-sites/server",
+          "operationCount": 33,
+          "confidence": 0.87,
+          "generatedAt": "2026-03-08"
+        },
+        {
+          "name": "google-sites-mcp",
           "version": "1.0.0",
           "path": "MCPs/google-sites/server",
           "operationCount": 23,
           "confidence": 0.88,
-          "generatedAt": "2026-03-08"
+          "generatedAt": "2026-03-08",
+          "deprecated": true
         }
       ]
     }

@@ -93,7 +93,22 @@ Options:
 Choosing (a) explores the app inline to learn the missing operation, adds it to
 the MCP server, and continues after a restart.
 
-### 4. Inspect MCP Server Internals
+### 4. Re-Learning — Update Existing MCPs
+
+When learning an app that already has an MCP server, you get four options:
+
+```
+An MCP server already exists for google-sites:
+  google-sites-mcp v1.0.0 — 23 tools, 88% confidence
+
+What would you like to do?
+  a) Re-learn from scratch — full exploration, generates v2.0.0
+  b) Update/extend — keep existing tools, add new ones
+  c) Validate & update — test each existing tool, fix broken selectors
+  d) Learn separate MCP — create a new independent MCP
+```
+
+### 5. Inspect MCP Server Internals
 
 ```
 → show_scripts()
@@ -176,13 +191,14 @@ Every generated MCP server supports two environment variables:
 ```
 
 The skill will:
-1. Navigate to the app and check for authentication (asks you to log in if needed)
-2. Map the UI structure, including iframe detection
-3. Explore interactive elements cautiously (asks before risky actions)
-4. Infer semantic operations from observed behavior
-5. Present the tool list for your approval (you can add/remove/request tools)
-6. Generate the MCP server code with mode switches and `show_scripts`
-7. Install dependencies and register in the catalogue
+1. Check if an MCP already exists for this app (offers re-learn, extend, validate, or new)
+2. Navigate to the app and check for authentication (asks you to log in if needed)
+3. Map the UI structure, including iframe detection
+4. Explore interactive elements cautiously (asks before risky actions)
+5. Infer semantic operations from observed behavior
+6. Present the tool list for your approval (you can add/remove/request tools)
+7. Generate the MCP server code with mode switches and `show_scripts`
+8. Install dependencies and register in the catalogue
 
 ### Step 2: Verify the Generated Server
 
@@ -251,7 +267,7 @@ a local match isn't found.
 - **Authentication detection**: Detects login redirects and asks the user to authenticate before exploring
 - **Iframe handling**: Discovers and traverses iframes for apps that render content in embedded frames
 - **Error recovery**: Retries once on transient failures, reports clearly on persistent errors
-- **MCP versioning**: Re-learning an app creates a new version alongside the old one
+- **MCP versioning**: Re-learning offers four modes: re-learn from scratch, update/extend, validate & fix, or learn a separate MCP
 - **Cross-platform**: Uses Node.js for base64 decoding and path resolution (works on Windows and Unix)
 
 ## License

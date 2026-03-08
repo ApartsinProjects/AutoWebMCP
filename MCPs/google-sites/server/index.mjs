@@ -3,6 +3,7 @@
 // Auto-generated MCP Server for: google-sites
 // Target: https://sites.google.com
 // Generated: 2026-03-08
+// Version: 2.0.0
 // Framework: AutoWebMCP v0.1.0
 // =============================================================================
 
@@ -34,7 +35,6 @@ async function getPage() {
   if (page && !page.isClosed()) return page;
 
   if (BROWSER_MODE === "headless" && DATA_MODE === "sandbox") {
-    // Headless + Sandbox: launch a fresh headless browser with no user data
     browser = await puppeteer.launch({
       headless: true,
       args: ["--no-sandbox", "--disable-setuid-sandbox"],
@@ -42,7 +42,6 @@ async function getPage() {
     page = await browser.newPage();
     await page.goto(TARGET_URL, { waitUntil: "networkidle2" });
   } else if (BROWSER_MODE === "headless" && DATA_MODE === "user") {
-    // Headless + User: launch headless using user's Chrome profile
     const userDataDir = process.env.CHROME_USER_DATA_DIR;
     if (!userDataDir) {
       throw new Error(
@@ -58,7 +57,6 @@ async function getPage() {
     page = await browser.newPage();
     await page.goto(TARGET_URL, { waitUntil: "networkidle2" });
   } else if (BROWSER_MODE === "visible" && DATA_MODE === "sandbox") {
-    // Visible + Sandbox: launch visible browser with clean profile
     browser = await puppeteer.launch({
       headless: false,
       args: ["--no-sandbox"],
@@ -93,7 +91,6 @@ async function getPage() {
 async function exec(fnBody, params = {}) {
   try {
     const p = await getPage();
-    // Inject utility functions and the command function, then execute
     const result = await p.evaluate(
       new Function("params", `
         ${commands.querySelector.toString()}
@@ -102,7 +99,7 @@ async function exec(fnBody, params = {}) {
         ${commands.waitForRemoval.toString()}
         ${commands.setInputValue.toString()}
         ${commands.sleep.toString()}
-        const fn = ${fnBody.toString()};
+        ${fnBody.toString().replace(/^async function \w+/, 'async function fn')}
         return fn(params);
       `),
       params
@@ -122,7 +119,7 @@ async function exec(fnBody, params = {}) {
 
 const server = new McpServer({
   name: "google-sites-mcp",
-  version: "1.0.0",
+  version: "2.0.0",
 });
 
 // --- Health Check ---
@@ -184,9 +181,16 @@ server.tool(
 
 server.tool(
   "set_site_title",
-  "Set the site title (shown in browser tab and site header)",
+  "Set the site title (shown in browser tab and top bar)",
   { title: z.string().describe("The new site title") },
   async ({ title }) => exec(commands.set_site_title, { title })
+);
+
+server.tool(
+  "set_site_name",
+  "Set the site name displayed in the hero/header area",
+  { name: z.string().describe("The site name to display in the header") },
+  async ({ name }) => exec(commands.set_site_name, { name })
 );
 
 server.tool(
@@ -223,23 +227,27 @@ server.tool(
 );
 
 server.tool(
-  "insert_button",
-  "Insert a clickable button element with a label and link",
-  {
-    name: z.string().describe("Button label text (max 120 chars)"),
-    link: z.string().describe("URL the button links to"),
-  },
-  async ({ name, link }) => exec(commands.insert_button, { name, link })
+  "set_text_style",
+  "Set paragraph style for the current text element",
+  { style: z.enum(["Normal text", "Title", "Heading", "Subheading"]).describe("Paragraph style to apply") },
+  async ({ style }) => exec(commands.set_text_style, { style })
 );
 
 server.tool(
-  "insert_embed",
-  "Embed external content from a URL or raw embed code",
+  "insert_link",
+  "Insert a hyperlink on the currently selected text",
+  { url: z.string().describe("URL to link to") },
+  async ({ url }) => exec(commands.insert_link, { url })
+);
+
+server.tool(
+  "insert_button",
+  "Insert a clickable button element with a label and link",
   {
-    url: z.string().optional().describe("URL to embed (e.g., YouTube, Google Maps)"),
-    embedCode: z.string().optional().describe("Raw HTML embed code (alternative to URL)"),
+    name: z.string().describe("Button label text"),
+    link: z.string().describe("URL the button links to"),
   },
-  async ({ url, embedCode }) => exec(commands.insert_embed, { url, embedCode })
+  async ({ name, link }) => exec(commands.insert_button, { name, link })
 );
 
 server.tool(
@@ -257,10 +265,41 @@ server.tool(
 );
 
 server.tool(
+  "insert_embed",
+  "Embed external content from a URL or raw embed code",
+  {
+    url: z.string().optional().describe("URL to embed (e.g., YouTube, Google Maps)"),
+    embedCode: z.string().optional().describe("Raw HTML embed code (alternative to URL)"),
+  },
+  async ({ url, embedCode }) => exec(commands.insert_embed, { url, embedCode })
+);
+
+server.tool(
   "insert_image",
   "Open the image picker to insert an image into the page",
   {},
   async () => exec(commands.insert_image)
+);
+
+server.tool(
+  "insert_collapsible_group",
+  "Insert a collapsible/accordion group into the page",
+  {},
+  async () => exec(commands.insert_collapsible_group)
+);
+
+server.tool(
+  "insert_table_of_contents",
+  "Insert a table of contents into the page",
+  {},
+  async () => exec(commands.insert_table_of_contents)
+);
+
+server.tool(
+  "insert_image_carousel",
+  "Insert an image carousel into the page",
+  {},
+  async () => exec(commands.insert_image_carousel)
 );
 
 // --- Page Management Tools ---
@@ -279,16 +318,62 @@ server.tool(
   async () => exec(commands.list_pages)
 );
 
+// --- Header Tools ---
+
+server.tool(
+  "set_header_type",
+  "Set the page header type",
+  { type: z.enum(["Cover", "Large banner", "Banner", "Title only"]).describe("Header type") },
+  async ({ type }) => exec(commands.set_header_type, { type })
+);
+
+server.tool(
+  "delete_header",
+  "Delete the page header entirely",
+  {},
+  async () => exec(commands.delete_header)
+);
+
+// --- Section Tools ---
+
+server.tool(
+  "delete_section",
+  "Delete the currently selected section from the page",
+  {},
+  async () => exec(commands.delete_section)
+);
+
+server.tool(
+  "duplicate_section",
+  "Duplicate the currently selected section",
+  {},
+  async () => exec(commands.duplicate_section)
+);
+
+server.tool(
+  "set_section_color",
+  "Set the background color scheme for the selected section",
+  { color: z.string().describe("Color name or number (1-4)") },
+  async ({ color }) => exec(commands.set_section_color, { color })
+);
+
 // --- Theme Tools ---
 
 server.tool(
   "set_theme",
-  "Change the site theme (Simple, Aristotle, Diplomat, Vision, etc.)",
+  "Change the site theme (Simple, Aristotle, Diplomat, Vision, Level, Impression)",
   { theme: z.string().describe("Theme name to apply") },
   async ({ theme }) => exec(commands.set_theme, { theme })
 );
 
-// --- Editor Actions ---
+server.tool(
+  "set_theme_color",
+  "Set the color variant for the current theme",
+  { color: z.string().describe("Color name or number (1-7)") },
+  async ({ color }) => exec(commands.set_theme_color, { color })
+);
+
+// --- Editor Action Tools ---
 
 server.tool(
   "undo",
@@ -318,21 +403,7 @@ server.tool(
   async () => exec(commands.exit_preview)
 );
 
-server.tool(
-  "delete_section",
-  "Delete the currently selected section from the page",
-  {},
-  async () => exec(commands.delete_section)
-);
-
-server.tool(
-  "duplicate_section",
-  "Duplicate the currently selected section",
-  {},
-  async () => exec(commands.duplicate_section)
-);
-
-// --- Settings & Info ---
+// --- Settings & Info Tools ---
 
 server.tool(
   "open_settings",
@@ -343,16 +414,9 @@ server.tool(
 
 server.tool(
   "get_site_info",
-  "Get current site info: title, page title, save status, URL",
+  "Get current site info: title, site name, page title, save status, URL",
   {},
   async () => exec(commands.get_site_info)
-);
-
-server.tool(
-  "list_insert_options",
-  "List all available insert options from the sidebar",
-  {},
-  async () => exec(commands.list_insert_options)
 );
 
 // --- Start Server ---

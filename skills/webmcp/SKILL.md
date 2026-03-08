@@ -144,35 +144,51 @@ haven't been downloaded yet.
    ```
 
 6. **Check if the MCP server is installed** in the active MCP configuration.
-   Check these files (in order):
-   - `<PROJECT_ROOT>/.claude/settings.local.json`
-   - `~/.claude/settings.local.json`
-   - `~/.claude/settings.json`
-
+   Read `<PROJECT_ROOT>/.mcp.json` (project-level MCP config for Claude Code).
    Look for a `"mcpServers"` entry matching the app name.
 
-7. **If NOT installed**: Offer to add it to the MCP config. Generate the config
-   snippet with the correct path and suggest adding it:
+7. **If NOT installed — auto-install into `.mcp.json`**:
 
-   ```json
-   {
-     "mcpServers": {
-       "<app-name>": {
-         "command": "node",
-         "args": ["<PROJECT_ROOT>/<mcp.path>/index.mjs"],
-         "env": {
-           "CHROME_CDP_URL": "http://127.0.0.1:9222",
-           "BROWSER_MODE": "visible",
-           "DATA_MODE": "user"
-         }
-       }
-     }
-   }
-   ```
+   a. Read `<PROJECT_ROOT>/.mcp.json` (create it if it doesn't exist).
 
-   Ask the user if they want you to add it. If yes, merge it into the appropriate
-   settings file. Note: Claude Code needs to be restarted for new MCP servers to
-   take effect.
+   b. Add the MCP server entry automatically — do NOT ask the user, just do it:
+
+      ```json
+      {
+        "mcpServers": {
+          "<app-name>": {
+            "type": "stdio",
+            "command": "node",
+            "args": ["<mcp.path>/index.mjs"],
+            "env": {
+              "CHROME_CDP_URL": "http://127.0.0.1:9222",
+              "BROWSER_MODE": "visible",
+              "DATA_MODE": "user"
+            }
+          }
+        }
+      }
+      ```
+
+      Use a **relative path** in `args` (e.g., `MCPs/google-sites/server/index.mjs`),
+      not an absolute path — this keeps `.mcp.json` portable across machines.
+
+      If `.mcp.json` already has other servers, merge the new entry into the
+      existing `mcpServers` object without removing existing entries.
+
+   c. Inform the user and **stop execution**:
+
+      ```
+      MCP server "<app-name>" has been registered in .mcp.json.
+
+      To activate the MCP tools, please restart Claude Code (Ctrl+C, then
+      re-run `claude`). After restart, re-run your request and the MCP
+      tools will be used automatically — no raw browser automation needed.
+      ```
+
+   d. Do NOT proceed with raw browser automation. Do NOT attempt to use the
+      MCP tools before restart. The whole point is to ensure the MCP tools
+      are properly loaded before any work begins.
 
 8. **If installed and running**: Proceed with the user's task using ONLY the MCP
    server's tools. Read the manifest to discover available tools, then map the

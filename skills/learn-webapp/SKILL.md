@@ -37,7 +37,48 @@ All output goes under: `<PROJECT_ROOT>/MCPs/<APP_NAME>/`
 
 1. Parse arguments. If no URL is provided, ask the user for one.
 2. Derive `APP_NAME` if not provided.
-3. Create the output directory structure:
+3. **Check for existing MCP** — Read `<PROJECT_ROOT>/catalogue.json` and check if an
+   MCP already exists for this `APP_NAME`. If one exists, present the user with options:
+
+   ```
+   An MCP server already exists for <APP_NAME>:
+     <mcp-name> v<version> — <operationCount> tools, <confidence>% confidence
+
+   What would you like to do?
+     a) Re-learn from scratch — full exploration, generates a new MCP version
+     b) Update/extend — keep existing tools, explore the app to add new ones
+     c) Validate & update — test each existing tool, fix broken selectors, update confidence
+     d) Learn separate MCP — create a new independent MCP with different tools
+   ```
+
+   **Wait for the user's choice before proceeding.**
+
+   - **If (a) Re-learn from scratch**: Proceed normally from step 4 onward. The new MCP
+     will be added as a new version (bump version, e.g., `1.0.0` → `2.0.0`) alongside
+     the old one in the catalogue.
+   - **If (b) Update/extend**: Read the existing `manifest.json` to load the current tool
+     list. Skip Phase 2–4 initial exploration. Instead, show the user the existing tools
+     and ask which new tools they want to add. For each requested tool, follow the Phase 7
+     "Manual Tool Addition" workflow. After all new tools are added, update the manifest
+     and catalogue (increment `operationCount`, keep same version with bumped patch, e.g.,
+     `1.0.0` → `1.1.0`).
+   - **If (c) Validate & update**: Read the existing `commands.mjs` and `manifest.json`.
+     Navigate to the app. For each existing tool, execute its procedure once to verify it
+     still works. Report results:
+     - Tools that pass validation: keep as-is, update confidence to match
+     - Tools with broken selectors: attempt to find updated selectors via exploration,
+       fix in `commands.mjs`, re-validate
+     - Tools that are completely broken (UI redesigned): mark for removal or re-learning
+     After validation, update `manifest.json` with new confidence scores and
+     `generatedAt` date.
+   - **If (d) Learn separate MCP**: Proceed normally from step 4, but create the new MCP
+     with a different name suffix (e.g., `<APP_NAME>-v2-mcp` or user-chosen name). Both
+     MCPs will coexist in the catalogue's `mcps` array. Ask the user for a name to
+     distinguish the new MCP.
+
+   If no existing MCP is found, proceed normally.
+
+4. Create the output directory structure:
 
 ```
 MCPs/<APP_NAME>/
@@ -52,9 +93,9 @@ MCPs/<APP_NAME>/
 └── README.md             # Generated documentation
 ```
 
-4. Get the browser tab context using `tabs_context_mcp`. Create a new tab if needed using `tabs_create_mcp`.
-5. Navigate to `TARGET_URL` in the tab.
-6. Wait for the page to load, then take a screenshot and save it as the baseline.
+5. Get the browser tab context using `tabs_context_mcp`. Create a new tab if needed using `tabs_create_mcp`.
+6. Navigate to `TARGET_URL` in the tab.
+7. Wait for the page to load, then take a screenshot and save it as the baseline.
 
 ---
 
@@ -608,7 +649,38 @@ The catalogue supports multiple MCPs per application. Add to the `applications` 
 If an entry for this app already exists, append the new MCP to the `mcps` array
 (or update the existing entry if it has the same name).
 
-### 6.3 Report Results — Learned Tools Display
+### 6.3 Auto-Register in `.mcp.json`
+
+After updating the catalogue, automatically register the MCP server in
+`<PROJECT_ROOT>/.mcp.json` so Claude Code can load it on next restart.
+
+1. Read `<PROJECT_ROOT>/.mcp.json` (create it if it doesn't exist)
+2. Add or update the server entry under `mcpServers`:
+
+   ```json
+   {
+     "mcpServers": {
+       "<APP_NAME>": {
+         "type": "stdio",
+         "command": "node",
+         "args": ["MCPs/<APP_NAME>/server/index.mjs"],
+         "env": {
+           "CHROME_CDP_URL": "http://127.0.0.1:9222",
+           "BROWSER_MODE": "visible",
+           "DATA_MODE": "user"
+         }
+       }
+     }
+   }
+   ```
+
+   Use **relative paths** in `args` — this keeps `.mcp.json` portable across machines.
+   If `.mcp.json` already has other servers, merge the new entry without removing them.
+
+3. This step is **automatic** — do not ask the user for permission. The whole point
+   of learning is to make the MCP server immediately available after restart.
+
+### 6.4 Report Results — Learned Tools Display
 
 **IMPORTANT**: Always present the complete list of learned tools to the user in a clear table format.
 
@@ -636,23 +708,16 @@ After the table, list:
 
 Finally, provide usage instructions:
 ```
-### How to Use
+### Next Steps
 
-1. Start Chrome with remote debugging:
-   chrome --remote-debugging-port=9222
+The MCP server has been auto-registered in .mcp.json.
 
-2. Navigate to <TARGET_URL>
-
-3. Add to your MCP config:
-   {
-     "mcpServers": {
-       "<APP_NAME>": {
-         "command": "node",
-         "args": ["<absolute-path-to>/MCPs/<APP_NAME>/server/index.mjs"],
-         "env": { "CHROME_CDP_URL": "http://127.0.0.1:9222" }
-       }
-     }
-   }
+To activate it:
+1. Restart Claude Code (the MCP server loads on startup)
+2. Start Chrome with remote debugging: chrome --remote-debugging-port=9222
+3. Navigate to <TARGET_URL>
+4. Ask Claude to interact with the app — the WebMCP skill will
+   automatically route through MCP tools instead of raw automation.
 ```
 
 ---
@@ -744,12 +809,16 @@ Result:
 - If Chrome CDP connection drops, report the error and ask the user to restart Chrome
 
 ### Re-Learning / Versioning
-- If an MCP already exists for this app in the catalogue:
-  - The new MCP version will be added alongside the existing one in `mcps` array
-  - Bump the version number (e.g., `1.0.0` → `2.0.0`)
-  - The old version remains available for rollback
-  - Users can choose which version to use in their MCP config
-- Always check for an existing MCP before creating a new one and inform the user
+- If an MCP already exists for this app in the catalogue, Phase 1 step 3 presents
+  the user with four options: re-learn, update/extend, validate & update, or learn
+  separate MCP. Always follow the user's chosen path.
+- Re-learning (option a) bumps the version (e.g., `1.0.0` → `2.0.0`) and adds the
+  new MCP alongside the old one in the `mcps` array. The old version remains for rollback.
+- Update/extend (option b) keeps the same MCP and adds new tools with a minor version
+  bump (e.g., `1.0.0` → `1.1.0`).
+- Validate & update (option c) tests existing tools and fixes broken ones in-place.
+- Separate MCP (option d) creates a new independent MCP with a distinct name.
+- Always check for an existing MCP before creating a new one (Phase 1 step 3).
 
 ### Context Management
 - Save exploration data incrementally (don't hold everything in memory)

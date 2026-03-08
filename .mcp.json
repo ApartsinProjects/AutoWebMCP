@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "google-sites": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["MCPs/google-sites/server/index.mjs"],
+      "env": {
+        "CHROME_CDP_URL": "http://127.0.0.1:9222",
+        "BROWSER_MODE": "visible",
+        "DATA_MODE": "user"
+      }
+    }
+  }
+}

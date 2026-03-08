@@ -1,6 +1,6 @@
 {
   "name": "google-sites-mcp",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Auto-generated MCP server for Google Sites — semantic operations for site editing",
   "type": "module",
   "main": "index.mjs",
