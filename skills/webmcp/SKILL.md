@@ -4,8 +4,8 @@ description: >
   Route web application tasks through learned MCP servers instead of raw browser
   automation. ALWAYS use this skill BEFORE interacting with any web application.
   Checks if a matching MCP server exists in the AutoWebMCP catalogue and instructs
-  you to use its semantic tools (e.g., set_page_title, insert_text_box) instead of
-  clicking and typing through the browser manually.
+  you to use its semantic tools instead of clicking and typing through the browser
+  manually.
   Triggers on: any web app interaction, "edit this site", "build a page", "add content",
   "change the theme", "fill this form", "automate this app", "create a site",
   "update the site", or any task involving a web application that may have a learned MCP.
@@ -81,8 +81,10 @@ If no match is found locally, try fetching the catalogue from GitHub. Read the
 ```bash
 # Read the repo name dynamically from catalogue.json
 REPO=$(node -e "console.log(JSON.parse(require('fs').readFileSync('<PROJECT_ROOT>/catalogue.json','utf-8')).repository)")
-gh api "repos/$REPO/contents/catalogue.json" -q .content | base64 -d
+gh api "repos/$REPO/contents/catalogue.json" -q .content | node -e "process.stdin.on('data',d=>process.stdout.write(Buffer.from(d.toString().trim(),'base64')))"
 ```
+
+If `gh` is not installed, skip the remote check entirely.
 
 If there is no local `catalogue.json` or no `repository` field, skip the remote check.
 
@@ -286,7 +288,8 @@ Options:
    e. Append the new function to `<PROJECT_ROOT>/MCPs/<APP_NAME>/server/commands.mjs`
    f. Add the new tool registration to `<PROJECT_ROOT>/MCPs/<APP_NAME>/server/index.mjs`
    g. Update `manifest.json` (add operation, increment count)
-   h. Update `catalogue.json` (bump `operationCount`)
+   h. Update `exploration/log.json` (add exploration entries and inferred operation)
+   i. Update `catalogue.json` (bump `operationCount`)
 
 2. After all missing tools are learned, re-display the execution plan with all
    statuses showing "available".
@@ -384,11 +387,11 @@ If any tool call failed, mark it with an error indicator:
    - `tool_A(...)` + `tool_B(...)` + `tool_C(...)` etc.
 
 4. **Coverage gaps**: If the MCP server doesn't have a tool for something the
-   user needs, note it and offer to add it via `/learn-webapp` with "add tool".
+   user needs, note it and offer to learn it (follow Step 4.3(a) inline workflow).
 
-5. **State awareness**: Some MCP tools depend on state (e.g., `format_text`
-   requires text to be selected). Sequence calls appropriately and use
-   `get_site_info` or similar query tools to check state when needed.
+5. **State awareness**: Some MCP tools depend on state (e.g., a formatting tool
+   may require text to be selected first). Sequence calls appropriately and use
+   query/info tools from the MCP to check state when needed.
 
 6. **Multiple MCPs**: The catalogue supports multiple MCPs per application.
    If multiple exist, prefer the one with highest confidence and most operations.
@@ -397,7 +400,7 @@ If any tool call failed, mark it with an error indicator:
 
 7. **Error recovery**: If an MCP tool call fails:
    - **Selector not found**: The app's UI may have changed. Report the error and
-     suggest re-learning the operation via Phase 7.
+     offer to re-learn the operation (follow Step 4.3(a) inline workflow).
    - **Page not loaded**: Verify the app is open in Chrome and the URL matches.
      Navigate to the correct URL and retry once.
    - **CDP connection error**: Check that Chrome is running with

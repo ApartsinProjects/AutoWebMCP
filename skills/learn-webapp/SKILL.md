@@ -207,7 +207,7 @@ editors, sandboxed widgets). During reconnaissance:
 1. Check for iframes: look for `iframe`, `[role="document"]` inside frames
 2. If the main content area is inside an iframe, note this — generated commands
    will need to target the iframe's content document, not the top-level page
-3. Use `javascript_tool` or `preview_eval` to enumerate iframes:
+3. Use `javascript_tool` (Claude in Chrome MCP) to enumerate iframes in the live browser:
    ```javascript
    Array.from(document.querySelectorAll('iframe')).map(f => ({
      src: f.src, id: f.id, name: f.name,
@@ -574,7 +574,7 @@ Create `MCPs/<APP_NAME>/README.md` documenting:
 
 1. `cd` into the generated server directory
 2. Run `npm install` to install dependencies
-3. Verify the server starts: `node index.mjs --help` or a quick smoke test
+3. Verify the server has no syntax errors: `node --check index.mjs`
 
 ### 6.2 Update Catalogue
 
@@ -584,7 +584,7 @@ The catalogue supports multiple MCPs per application. Add to the `applications` 
 ```json
 {
   "version": "2.0.0",
-  "repository": "ApartsinProjects/AutoWebMCP",
+  "repository": "<read from existing catalogue.json or set to your GitHub repo>",
   "applications": {
     "<APP_NAME>": {
       "displayName": "<Human-Readable App Name>",
@@ -711,6 +711,16 @@ Result:
 - NEVER make purchases, send messages, or take irreversible actions
 - If exploration requires authentication, ask the user to log in first
 - Respect bot detection — do not try to bypass CAPTCHAs
+- **Cautious exploration**: Before clicking any element, assess the risk:
+  - **Safe to explore**: Read-only actions (opening menus, expanding sections, tabs,
+    viewing settings, hovering for tooltips)
+  - **Ask user first**: Actions that could modify data (delete buttons, submit/send,
+    publish, share, archive, move), actions that could affect privacy (sharing
+    settings, contact exports, permission changes), actions that navigate to
+    external services or trigger OAuth flows
+  - When in doubt, describe the element and ask: "This button appears to [action].
+    Should I click it to explore, or skip it?"
+- Do NOT blindly click every interactive element — prioritize safe, reversible actions
 
 ### Robustness
 - Always use multiple selector strategies (ID > aria > role > class > structure)
