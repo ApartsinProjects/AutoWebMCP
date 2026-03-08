@@ -25,8 +25,11 @@ operations as high-level tools.
 Set these variables at the start:
 - `TARGET_URL` = `$0`
 - `APP_NAME` = `$1` or derive from the URL hostname (e.g., `mail.google.com` → `gmail`)
+- `PROJECT_ROOT` = the root directory of the AutoWebMCP project. Resolve by searching
+  upward from this skill file for a directory containing `catalogue.json`, or use the
+  working directory if it contains `catalogue.json`.
 
-All output goes under: `E:/Projects/AutoWebMCP/MCPs/<APP_NAME>/`
+All output goes under: `<PROJECT_ROOT>/MCPs/<APP_NAME>/`
 
 ---
 
@@ -377,8 +380,8 @@ to Phase 5. Never skip this gate or auto-approve.
 ### 5.1 Read Templates
 
 Read the following template files:
-- `E:/Projects/AutoWebMCP/src/templates/mcp-server-template.mjs`
-- `E:/Projects/AutoWebMCP/src/templates/package-template.json`
+- `<PROJECT_ROOT>/src/templates/mcp-server-template.mjs`
+- `<PROJECT_ROOT>/src/templates/package-template.json`
 
 ### 5.2 Generate Command Library
 
@@ -459,7 +462,7 @@ Every generated MCP server MUST support two independent mode switches via enviro
 | headless | sandbox | CI/testing — fully isolated, no credentials, no UI |
 
 The generated `index.mjs` should read these from `process.env` and implement the
-corresponding `getPage()` connection logic. See `E:/Projects/AutoWebMCP/MCPs/google-sites/server/index.mjs`
+corresponding `getPage()` connection logic. See `<PROJECT_ROOT>/MCPs/google-sites/server/index.mjs`
 for a reference implementation.
 
 #### 5.3.2 ShowScripts Tool (Mandatory)
@@ -537,7 +540,7 @@ Create `MCPs/<APP_NAME>/README.md` documenting:
 
 ### 6.2 Update Catalogue
 
-Read `E:/Projects/AutoWebMCP/catalogue.json` and add/update the entry for this app.
+Read `<PROJECT_ROOT>/catalogue.json` and add/update the entry for this app.
 The catalogue supports multiple MCPs per application. Add to the `applications` object:
 
 ```json
@@ -645,7 +648,7 @@ extend the existing MCP server for the current application.
      operations array and increment any counters
    - **Update** `MCPs/<APP_NAME>/exploration/log.json` — add the exploration entries
      and the new inferred operation
-   - **Update** `E:/Projects/AutoWebMCP/catalogue.json` — bump operationCount in the relevant MCP entry
+   - **Update** `<PROJECT_ROOT>/catalogue.json` — bump operationCount in the relevant MCP entry
 
 6. **Report**: Show the user the newly added tool in the same table format as Phase 6.3,
    confirming it was added to the existing server.

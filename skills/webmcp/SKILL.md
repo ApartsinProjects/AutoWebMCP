@@ -22,6 +22,12 @@ automation (clicking, typing, screenshots).
 
 **This skill should run BEFORE any browser interaction begins.**
 
+### Resolve PROJECT_ROOT
+
+Before doing anything, resolve `PROJECT_ROOT` — the root directory of the AutoWebMCP
+project. Search upward from this skill file for a directory containing `catalogue.json`,
+or use the current working directory if it contains `catalogue.json`.
+
 ---
 
 ## Step 1: Identify the Target Application
@@ -42,7 +48,7 @@ Determine which web application the user wants to interact with:
 Read the AutoWebMCP catalogue:
 
 ```
-E:/Projects/AutoWebMCP/catalogue.json
+<PROJECT_ROOT>/catalogue.json
 ```
 
 The catalogue maps applications to one or more MCP servers:
@@ -88,16 +94,16 @@ haven't been downloaded yet.
    the highest confidence score and most operations. Show the user if there are choices.
 
 2. **Check if server files exist locally**:
-   - Look for `E:/Projects/AutoWebMCP/<mcp.path>/index.mjs`
+   - Look for `<PROJECT_ROOT>/<mcp.path>/index.mjs`
    - If files exist locally, skip to step 4
 
 3. **Download from GitHub** (if not local):
    ```bash
    # Create local cache directory
-   mkdir -p "E:/Projects/AutoWebMCP/<mcp.path>"
+   mkdir -p "<PROJECT_ROOT>/<mcp.path>"
 
    # Download server files from GitHub
-   cd "E:/Projects/AutoWebMCP/<mcp.path>"
+   cd "<PROJECT_ROOT>/<mcp.path>"
    gh api repos/ApartsinProjects/AutoWebMCP/contents/<mcp.path> \
      --jq '.[].download_url' | while read url; do
        curl -sLO "$url"
@@ -109,7 +115,7 @@ haven't been downloaded yet.
 
 4. **Read the manifest** for the full tool list:
    ```
-   E:/Projects/AutoWebMCP/<mcp.path>/manifest.json
+   <PROJECT_ROOT>/<mcp.path>/manifest.json
    ```
 
 5. **Tell yourself (and the user) to use the MCP tools.** Output:
@@ -127,9 +133,9 @@ haven't been downloaded yet.
 
 6. **Check if the MCP server is installed** in the active MCP configuration.
    Check these files (in order):
-   - `E:/Projects/AutoWebMCP/.claude/settings.local.json`
-   - `C:/Users/apart/.claude/settings.local.json`
-   - `C:/Users/apart/.claude/settings.json`
+   - `<PROJECT_ROOT>/.claude/settings.local.json`
+   - `~/.claude/settings.local.json`
+   - `~/.claude/settings.json`
 
    Look for a `"mcpServers"` entry matching the app name.
 
@@ -141,7 +147,7 @@ haven't been downloaded yet.
      "mcpServers": {
        "<app-name>": {
          "command": "node",
-         "args": ["E:/Projects/AutoWebMCP/<mcp.path>/index.mjs"],
+         "args": ["<PROJECT_ROOT>/<mcp.path>/index.mjs"],
          "env": {
            "CHROME_CDP_URL": "http://127.0.0.1:9222",
            "BROWSER_MODE": "visible",
