@@ -202,21 +202,6 @@ Every learned app makes the entire ecosystem more capable.
 
 ---
 
-## Current Status
-
-| What | Status |
-|------|--------|
-| Learning skill (`/learn-webapp`) | Working — tested on Google Sites |
-| Runtime router (`/webmcp`) | Working — auto-routes through MCP tools |
-| Google Sites MCP | v2.0.0 — 33 tools, 87% confidence |
-| Auto-install in `.mcp.json` | Working — MCP servers register automatically |
-| Auto-launch Chrome with CDP | Working — asks user profile vs sandbox mode |
-| Gap analysis & on-demand learning | Working — learns missing tools inline |
-| GitHub catalogue sharing | Working — downloads MCPs from remote catalogue |
-| Other web apps | Not yet learned — contributions welcome! |
-
----
-
 ## For Contributors
 
 Want to add an MCP for your favorite web app?
