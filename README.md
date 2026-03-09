@@ -95,32 +95,11 @@ Download `autowebmcp-v0.1.0.zip` from [Releases](https://github.com/ApartsinProj
 ### Prerequisites
 
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) with [MCP support](https://docs.anthropic.com/en/docs/claude-code/mcp)
-- [Node.js](https://nodejs.org/) 18+
-- Google Chrome (for CDP connection)
+- [Node.js](https://nodejs.org/) 18+ (required by the MCP SDK)
+- Google Chrome
 
-### Chrome Setup
-
-AutoWebMCP connects to Chrome via the [Chrome DevTools Protocol](https://chromedevtools.github.io/devtools-protocol/).
-Start Chrome with remote debugging enabled:
-
-```bash
-# macOS
-/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
-  --remote-debugging-port=9222 \
-  --user-data-dir="$HOME/chrome-cdp-profile"
-
-# Windows
-"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe" ^
-  --remote-debugging-port=9222 ^
-  --user-data-dir="%LOCALAPPDATA%\Google\Chrome\CDP-Profile"
-
-# Linux
-google-chrome --remote-debugging-port=9222 \
-  --user-data-dir="$HOME/.chrome-cdp-profile"
-```
-
-> **Note**: The `--user-data-dir` flag must point to a non-default directory.
-> Chrome requires this for remote debugging to work.
+> **No manual Chrome setup needed.** The `/learn-webapp` skill automatically detects
+> Chrome, launches it with remote debugging enabled, and manages the connection.
 
 ---
 
