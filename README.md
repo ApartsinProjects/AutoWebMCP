@@ -18,20 +18,10 @@
 
 ## The Problem
 
-When Claude interacts with web applications, it relies on
-[computer use](https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool) —
-taking screenshots, analyzing pixels, calculating coordinates, clicking, and repeating.
-This is how Claude Code's browser automation works today: every action is a
-screenshot-analyze-click loop.
-
-This approach is:
-
-- **Fragile** — one UI update and selectors or coordinates break
-- **Slow** — screenshot, analyze, click, screenshot again... for every single action
-- **Wasteful** — Claude re-discovers the same app's UI in every session
-- **Unreliable** — wrong clicks, missed elements, timing failures
-
-Claude deserves better than pixel-hunting through web apps it's already seen before.
+Claude Code uses [computer use](https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool)
+to interact with web applications — every session, it rediscovers the app's layout from scratch,
+screenshots the screen, clicks coordinates, screenshots again, and repeats. It's slow, fragile,
+and wastes time on work Claude has already done before.
 
 ## The Solution
 
@@ -67,6 +57,65 @@ AFTER (AutoWebMCP → MCP tool call):
   1. set_page_title("My New Title")          ~0.5s
                                     Total: ~0.5s, reliable
 ```
+
+---
+
+## Installation
+
+### Option A: Clone the repo (recommended)
+
+```bash
+git clone https://github.com/ApartsinProjects/AutoWebMCP.git
+cd AutoWebMCP
+npm install
+```
+
+Then copy skills into your Claude Code project:
+
+```bash
+# From your project directory
+cp -r path/to/AutoWebMCP/skills/learn-webapp .claude/skills/learn-webapp
+cp -r path/to/AutoWebMCP/skills/webmcp .claude/skills/webmcp
+cp path/to/AutoWebMCP/src/templates/* src/templates/
+```
+
+### Option B: Download release
+
+Download `autowebmcp-v0.1.0.zip` from [Releases](https://github.com/ApartsinProjects/AutoWebMCP/releases), extract, and run:
+
+```bash
+./install.sh /path/to/your/project
+```
+
+### Prerequisites
+
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) with [MCP support](https://docs.anthropic.com/en/docs/claude-code/mcp)
+- [Node.js](https://nodejs.org/) 18+
+- Google Chrome (for CDP connection)
+
+### Chrome Setup
+
+AutoWebMCP connects to Chrome via the [Chrome DevTools Protocol](https://chromedevtools.github.io/devtools-protocol/).
+Start Chrome with remote debugging enabled:
+
+```bash
+# macOS
+/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
+  --remote-debugging-port=9222 \
+  --user-data-dir="$HOME/chrome-cdp-profile"
+
+# Windows
+"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe" ^
+  --remote-debugging-port=9222 ^
+  --user-data-dir="%LOCALAPPDATA%\Google\Chrome\CDP-Profile"
+
+# Linux
+google-chrome --remote-debugging-port=9222 \
+  --user-data-dir="$HOME/.chrome-cdp-profile"
+```
+
+> **Note**: The `--user-data-dir` flag must point to a non-default directory.
+> Chrome requires this for remote debugging to work.
 
 ---
 
