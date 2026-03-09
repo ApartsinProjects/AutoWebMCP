@@ -1,72 +1,68 @@
-# Google Sites MCP Server
+# Google Sites MCP
 
-Auto-generated MCP server providing 23 semantic operations for the Google Sites editor.
+Auto-generated MCP server for [Google Sites](https://sites.google.com) — 33 semantic tools replacing raw browser automation.
 
-## Operations
+## Tools
 
-| # | Tool | Description | Parameters | Category |
-|---|------|-------------|------------|----------|
-| 1 | `health_check` | Check connectivity | — | retrieval |
-| 2 | `set_site_title` | Set site title | `title: string` | data entry |
-| 3 | `set_page_title` | Set hero page title | `title: string` | data entry |
-| 4 | `insert_text_box` | Insert text box | `text?: string, style?: enum` | editing |
-| 5 | `set_text_content` | Replace selected text | `text: string` | editing |
-| 6 | `format_text` | Bold/italic/underline | `format: enum` | editing |
-| 7 | `insert_button` | Insert button element | `name: string, link: string` | editing |
-| 8 | `insert_embed` | Embed URL or HTML | `url?: string, embedCode?: string` | editing |
-| 9 | `insert_divider` | Insert divider line | — | editing |
-| 10 | `insert_spacer` | Insert vertical space | — | editing |
-| 11 | `insert_image` | Open image picker | — | editing |
-| 12 | `add_page` | Add new page | `name: string` | workflow |
-| 13 | `list_pages` | List all pages | — | retrieval |
-| 14 | `set_theme` | Change site theme | `theme: string` | workflow |
-| 15 | `undo` | Undo last action | — | navigation |
-| 16 | `redo` | Redo last action | — | navigation |
-| 17 | `preview_site` | Enter preview mode | — | navigation |
-| 18 | `exit_preview` | Exit preview mode | — | navigation |
-| 19 | `delete_section` | Delete selected section | — | editing |
-| 20 | `duplicate_section` | Duplicate section | — | editing |
-| 21 | `open_settings` | Open settings dialog | — | navigation |
-| 22 | `get_site_info` | Get site metadata | — | retrieval |
-| 23 | `list_insert_options` | List sidebar options | — | retrieval |
+| # | Tool | Description | Parameters |
+|---|------|-------------|------------|
+| 1 | `health_check` | Verify CDP connection | — |
+| 2 | `show_scripts` | List all JavaScript functions in commands.mjs | — |
+| 3 | `set_site_title` | Set browser tab title | `title` |
+| 4 | `set_site_name` | Set header site name | `name` |
+| 5 | `set_page_title` | Set hero heading | `title` |
+| 6 | `insert_text_box` | Add text section | `text?`, `style?` |
+| 7 | `set_text_content` | Replace selected text content | `text` |
+| 8 | `format_text` | Apply bold/italic/underline | `format` |
+| 9 | `set_text_style` | Set paragraph style | `style` |
+| 10 | `insert_link` | Add hyperlink to selected text | `url` |
+| 11 | `insert_button` | Add clickable button | `name`, `link` |
+| 12 | `insert_divider` | Add horizontal divider | — |
+| 13 | `insert_spacer` | Add vertical spacing | — |
+| 14 | `insert_embed` | Embed external content | `url?`, `embedCode?` |
+| 15 | `insert_image` | Open image picker | — |
+| 16 | `insert_collapsible_group` | Add accordion section | — |
+| 17 | `insert_table_of_contents` | Add table of contents | — |
+| 18 | `insert_image_carousel` | Add image carousel | — |
+| 19 | `add_page` | Create new page | `name` |
+| 20 | `list_pages` | List all pages | — |
+| 21 | `set_header_type` | Set header type | `type` |
+| 22 | `delete_header` | Remove page header | — |
+| 23 | `delete_section` | Delete selected section | — |
+| 24 | `duplicate_section` | Duplicate selected section | — |
+| 25 | `set_section_color` | Set section background color | `color` |
+| 26 | `set_theme` | Change site theme | `theme` |
+| 27 | `set_theme_color` | Set theme color variant | `color` |
+| 28 | `undo` | Undo last action | — |
+| 29 | `redo` | Redo last action | — |
+| 30 | `preview_site` | Enter preview mode | — |
+| 31 | `exit_preview` | Exit preview mode | — |
+| 32 | `open_settings` | Open site settings dialog | — |
+| 33 | `get_site_info` | Get current site metadata | — |
+
+## Files
+
+```
+google-sites/
+├── server/
+│   ├── index.mjs       # Server entry point (tool registrations + CDP)
+│   ├── commands.mjs    # Learned JavaScript functions
+│   ├── manifest.json   # Capabilities metadata
+│   └── package.json    # Dependencies
+└── exploration/
+    ├── log.json        # Exploration log from learning phase
+    └── snapshots/      # Accessibility tree snapshots
+```
 
 ## Mode Switches
 
 | BROWSER_MODE | DATA_MODE | Use Case |
 |---|---|---|
-| `visible` | `user` | **Default.** Agent works in user's real browser |
+| `visible` | `user` | **Default.** Works in user's real browser |
 | `visible` | `sandbox` | Testing — visible browser, clean profile |
 | `headless` | `user` | Background automation with user credentials |
 | `headless` | `sandbox` | CI/testing — fully isolated |
 
-## Installation
-
-```bash
-cd repository/google-sites/server
-npm install
-```
-
 ## Usage
 
-Add to your Claude Code MCP config (`.claude/settings.json` or similar):
-
-```json
-{
-  "mcpServers": {
-    "google-sites": {
-      "command": "node",
-      "args": ["/absolute/path/to/repository/google-sites/server/index.mjs"],
-      "env": {
-        "CHROME_CDP_URL": "http://127.0.0.1:9222",
-        "BROWSER_MODE": "visible",
-        "DATA_MODE": "user"
-      }
-    }
-  }
-}
-```
-
-Start Chrome with remote debugging:
-```bash
-chrome --remote-debugging-port=9222
-```
+Auto-registered in `.mcp.json`. Claude Code loads it automatically when interacting with Google Sites.
