@@ -482,12 +482,83 @@ have class names that match obfuscation patterns:
    - Structural selectors like `[role="main"] > div > div:first-child`
 4. Lower the default confidence for all tools by 0.05 since obfuscated apps
    are inherently harder to automate reliably
-5. Inform the user:
+5. **Enforce in manifest generation**: When writing `manifest.json`, automatically
+   apply the -0.05 penalty to every operation's confidence score. Add
+   `"domCharacteristics": { "obfuscatedClasses": true }` to the manifest
+6. Inform the user:
    ```
    This app uses obfuscated CSS classes (e.g., compiled React/Angular output).
    CSS-based selectors will not be used. Tools will rely on ARIA attributes
    and text content matching, which may be less precise.
    ```
+
+### 2.3.4 DOM Portal Detection
+
+Some React/Angular apps render interactive elements *outside* their logical parent
+containers using "portals" (React.createPortal). For example, Facebook renders the
+post composer's `[role="textbox"][contenteditable="true"]` element OUTSIDE the
+`[role="dialog"]` container, even though it visually appears inside the dialog.
+
+**Detection**: During exploration, after opening a dialog/panel/overlay:
+1. Search for interactive elements WITHIN the dialog using `querySelectorWithin`
+2. If expected elements (text inputs, buttons) are NOT found within the dialog,
+   search GLOBALLY via `querySelector` or `read_page`
+3. If elements are found globally but not within the dialog, flag the app as
+   using DOM portals for that component:
+   ```json
+   {
+     "portalDetected": true,
+     "component": "post composer",
+     "dialogRef": "ref_X",
+     "portalledElements": ["[role='textbox'][contenteditable='true']"],
+     "note": "Textbox rendered outside dialog via React portal"
+   }
+   ```
+
+**Impact on code generation**: Operations for portal-using components MUST search
+globally (`document.querySelector(...)`) rather than scoping to the dialog
+(`dialog.querySelector(...)`). The exploration log entry guides code generation
+to use the correct scoping strategy.
+
+### 2.3.5 Click-to-Activate Element Detection
+
+Some interactive elements don't exist in the DOM until their container or
+placeholder is clicked. For example, Facebook's post composer textbox only
+appears after clicking the "What's on your mind?" placeholder area.
+
+**Detection**: During element cataloging, note elements that:
+1. Have placeholder text suggesting interactivity (e.g., "What's on your mind?",
+   "Search", "Type a message")
+2. Don't have an editable element (input/textarea/contenteditable) visible
+   in the accessibility tree
+3. Show a new editable element after being clicked
+
+**Procedure**:
+1. Identify placeholder/trigger elements by aria-placeholder or placeholder-like text
+2. Click the trigger element
+3. Re-read the page to find newly appeared elements
+4. Record the activation pattern:
+   ```json
+   {
+     "clickToActivate": true,
+     "trigger": "[aria-placeholder*='on your mind']",
+     "activatedElement": "[role='textbox'][contenteditable='true']",
+     "delay": 500,
+     "note": "Textbox appears in DOM only after clicking placeholder"
+   }
+   ```
+
+**Impact on code generation**: Operations that interact with click-to-activate
+elements must include the activation step before attempting to find/interact
+with the activated element. Pattern:
+```javascript
+// Click placeholder to activate the textbox
+const placeholder = querySelector(['[aria-placeholder*="on your mind"]']);
+if (placeholder) placeholder.click();
+await sleep(500);
+// Now find the activated element
+const textbox = querySelector(['[role="textbox"][contenteditable="true"]']);
+```
 
 ### 2.4 Save Reconnaissance Data
 
@@ -714,6 +785,8 @@ specific code template.
 | **dropdown-option** | Click opens listbox/menu, then click option | `el.click(); await sleep(300); optionEl.click()` |
 | **focus-type** | Focus element, then type via setInputValue | `el.focus(); setInputValue(el, value)` |
 | **contenteditable** | Focus contentEditable div, selectAll, insertText | `setContentEditableValue(el, value)` |
+| **hover-reveal** | Hover to reveal hidden UI, then interact | `return { __hoverCoords: {x,y}, __followUp: "..." }` |
+| **click-to-activate** | Click placeholder to make element appear, then interact | `placeholder.click(); await sleep(500); textbox = querySelector(...)` |
 | **multi-step-cascade** | Click triggers panel/dialog, interact within, confirm | `clickAndWait(trigger, panel); fillFields(); confirmBtn.click()` |
 | **toggle** | Click toggles state; read back aria-checked | `el.click(); return { state: el.getAttribute('aria-checked') }` |
 
@@ -729,6 +802,71 @@ Record the classification for each element in the exploration log:
 During Phase 5 code generation, use the appropriate code pattern for each element
 based on its classification. The `trusted-click` pattern is especially important —
 these elements MUST use `__clickCoords` or the generated tool will silently fail.
+
+### Editor Framework Detection
+
+During exploration, detect which rich text editor framework the app uses.
+Different editors require different input strategies and readback approaches.
+
+**Detection procedure**: For each contenteditable element found, run:
+```javascript
+// Check for editor framework markers
+const markers = {
+  lexical: !!el.querySelector('[data-lexical-editor]') || !!el.closest('[data-lexical-editor]'),
+  proseMirror: !!el.querySelector('.ProseMirror') || el.classList?.contains('ProseMirror'),
+  quill: !!el.querySelector('.ql-editor') || el.classList?.contains('ql-editor'),
+  tinyMCE: !!el.querySelector('.tox-edit-area') || !!document.querySelector('.tox-tinymce'),
+  draft: !!el.querySelector('[data-editor]') || !!el.closest('[data-contents="true"]'),
+};
+```
+
+Record the detected framework in the exploration log:
+```json
+{
+  "editorFramework": "lexical|proseMirror|quill|tinyMCE|draft|unknown",
+  "inputStrategy": "setContentEditableValue with 300ms readback delay",
+  "readbackMethod": "extractTextContent() — handles Lexical data-lexical-text spans"
+}
+```
+
+**Framework-specific notes**:
+- **Lexical** (Facebook): Text stored in `<span data-lexical-text="true">` elements.
+  `insertText` works but readback via `textContent` may be delayed. Use
+  `extractTextContent()` with the element for reliable readback.
+- **ProseMirror** (Google Docs, Notion): Uses transaction-based updates. `insertText`
+  works for simple text but may not trigger ProseMirror's update cycle for complex ops.
+- **Quill**: Standard contentEditable; `setContentEditableValue()` works reliably.
+- **Unknown**: Default to `setContentEditableValue()` with `sleep(300)` + readback.
+
+### Hover Interaction Exploration
+
+Some interactive elements reveal additional UI only when hovered for a duration.
+Common examples: Facebook's reaction bar (hover Like for 2s), tooltip menus,
+hover-activated dropdowns, and action buttons that appear on card hover.
+
+**During Phase 3 exploration**:
+1. For elements with engagement-related labels (Like, React, Vote, Rate, Star),
+   try hovering for 2 seconds using the `computer` tool with `hover` action
+2. After hovering, take a screenshot and `read_page` to detect new elements
+3. If new elements appeared (reaction picker, tooltip menu, action bar):
+   - Record the hover trigger, delay, and revealed elements
+   - Classify the interaction as `hover-reveal` pattern
+   - Test if the revealed elements need trusted clicks or can use JS `.click()`
+4. Record in the exploration log:
+   ```json
+   {
+     "elementRef": "ref_X",
+     "interactionPattern": "hover-reveal",
+     "hoverDelay": 2000,
+     "revealedElements": ["Love", "Care", "Haha", "Wow", "Sad", "Angry"],
+     "codePattern": "__hoverCoords + __followUp"
+   }
+   ```
+
+**Impact on code generation**: Hover-reveal operations MUST use the `__hoverCoords`
++ `__followUp` exec() signal pattern. The command returns coordinates for the hover
+target, and a `__followUp` function string that inspects the revealed UI and performs
+the desired action after the hover delay.
 
 ### Multi-step Workflow Discovery
 
@@ -780,6 +918,46 @@ a dashboard vs settings page, an inbox vs a compose view).
 4. **Tag operations by view**: Each inferred operation should record which view it
    belongs to. This helps generated `commands.mjs` include proper precondition
    checks (e.g., `if (!isEditor()) return { error: "Not in editor" }`).
+
+### Feed & Card-Based Content Discovery
+
+Many apps (Facebook, Twitter/X, Reddit, LinkedIn, news readers) display content
+in feed/card patterns without semantic `[role="feed"]` markup. These require
+anchor-based discovery using `getRepeatingContainers()`.
+
+**Detection**: If the app's main content area contains repeating similar structures
+(posts, cards, items) but no `[role="feed"]` or `[role="list"]` element:
+1. Identify a common "anchor" element that exists in every card — typically an
+   action button like `[aria-label="Like"]`, `[aria-label="Actions for this post"]`,
+   or `[aria-label="Share"]`
+2. Use `getRepeatingContainers(anchorSelector, levels, verifySelector)` to walk up
+   the DOM from each anchor and find the card container
+3. Test with different `levels` values (8-15) until you find the right container depth
+4. Use a `verifySelector` to confirm the container — another element that should exist
+   in every card (e.g., a Like button + an Actions button in the same container)
+
+**Recommended exploration approach**:
+```javascript
+// Find post containers by walking up from action buttons
+const posts = getRepeatingContainers(
+  '[aria-label="Actions for this post"]',  // anchor
+  15,                                       // max levels
+  '[aria-label="Like"]'                     // verify: must also contain Like button
+);
+```
+
+Record the discovery parameters in `exploration/log.json`:
+```json
+{
+  "feedPattern": {
+    "anchorSelector": "[aria-label=\"Actions for this post\"]",
+    "maxLevels": 15,
+    "verifySelector": "[aria-label=\"Like\"]",
+    "containerCount": 4,
+    "note": "No [role='feed'] present. Posts found via anchor-based walk-up."
+  }
+}
+```
 
 ### Element Reference Stability
 
@@ -853,10 +1031,20 @@ Before starting exploration, check if the app requires authentication:
 
 ### Exploration Budget
 
-- Explore at minimum 15-20 interactive elements
+- **Element count heuristic**: Scale the exploration budget to the app's complexity:
+  - < 15 interactive elements: Explore all. Budget: 20-30 tool calls
+  - 15-30 elements: Standard budget. Explore 15-20 elements, 30-60 tool calls
+  - 30-50 elements: Extended budget. Explore 20-30 elements, 60-90 tool calls
+  - 50+ elements: Focus on primary regions first. Use parallel exploration agents
 - Explore at minimum 2-3 complete multi-step workflows
 - Stop when you've covered all major regions and primary actions
 - Skip purely decorative or repetitive elements (e.g., 50 identical list items — explore 1-2)
+- **Parallel exploration**: For apps with 5+ independent regions (e.g., Facebook has
+  header bar, sidebar, feed, composer, chat), use the Agent tool to explore 2-3
+  independent regions concurrently. Each agent explores its assigned region and
+  returns the exploration results. Merge results into `exploration/log.json`.
+  Only parallelize regions that don't affect each other's state (e.g., sidebar
+  navigation changes the content area, so those are NOT independent).
 - **Time budget**: Aim to complete exploration within 30-60 tool calls. If the app
   is very complex, focus on the most important regions first and note unexplored
   areas in the report.
@@ -1142,7 +1330,10 @@ Read the following template files:
 | `clickByAriaLabel(label)` | Click element by aria-label | Quick click when aria-label is known |
 | `findButtonByText(text)` | Find `<button>` or `[role="button"]` by text | Buttons without aria-labels |
 | `findElementByText(role, text, opts)` | Find element by role + text content | Elements without aria-labels |
-| `clickMenuItem(itemText)` | Click `[role="menuitem"]` by text | Menu interactions |
+| `clickMenuItem(itemText)` | Click menu item by text (searches menuitem + button roles) | Menu interactions |
+| `findMenuItemByText(text)` | Find menu item element without clicking | When you need __clickCoords for a menu item |
+| `extractTextContent(el, opts)` | Extract text from any editor (Lexical, ProseMirror, plain) | Reading back values from rich text editors |
+| `retryWithFallback(primary, fallback)` | Try primary action, fallback on failure | Resilient tool implementations |
 | `clickAndWait(clickSel, waitSel, timeout)` | Click then wait for result element | Toolbar button → dialog pattern |
 | `getPageState()` | Return diagnostic page info | Precondition checks, debugging |
 | `navigateTo(url)` | Navigate via `__navigate` signal | In-app page transitions |
@@ -1170,6 +1361,11 @@ Read the following template files:
 - `__followUp` — optional function string to evaluate after a trusted click/hover/key
 - Single retry with helper re-injection on failure
 - Post-execution URL re-check for in-app navigation
+- Session expiry detection — if post-execution URL matches auth patterns
+  (`/login`, `/signin`, `/auth`, `/checkpoint`), returns `state_error` with
+  `session_expired` hint instead of a cryptic selector failure
+- `--smoke-test` CLI flag — run `node index.mjs --smoke-test` to verify
+  connectivity and helper injection without starting the MCP server
 
 ### 5.2 Generate Command Library
 
@@ -1775,6 +1971,12 @@ probe (Phase 0.5). If the browser is unreachable, relaunch before proceeding.
    - SKIP (inferred but untested) → confidence 0.65-0.75
    - FAIL then fixed → confidence 0.75-0.85
 
+**Selector validation cache**: Track which selectors have been confirmed working
+during validation. If multiple tools share the same selector (e.g., several tools
+use `[aria-label="Add question"]`), only validate that selector once. When a
+selector is confirmed, mark it in a set and skip re-validation in subsequent tools.
+This can reduce validation time by 20-30% for tools with overlapping selectors.
+
 **Time budget**: Aim to validate each tool in 1-2 browser interactions. For a
 30-tool server, this should take ~30-60 tool calls total.
 
@@ -1816,12 +2018,21 @@ export async function _validate_all() {
 Rules for generated validation:
 - **Query tools**: Call with no args or safe defaults, expect `success: true`
 - **Mutation tools**: Capture current state → mutate → verify → restore original
+- **`__clickCoords` tools**: Tools that return `__clickCoords` (trusted click pattern)
+  cannot be validated via `page.evaluate()` alone — they need the full `exec()` pipeline.
+  The `_validate_all()` function should call these tools through the MCP server's own
+  `exec()` function, or mark them as requiring manual validation
+- **`__hoverCoords` tools**: Similarly, hover-reveal tools need the full exec() pipeline.
+  Mark these for manual validation or call through exec()
 - **Skip list**: Tools that create permanent side effects (e.g., `publish_site`,
   `delete_page`) are skipped and listed in the report
 - **Output**: Return pass/fail summary; export for use via `run_script`
 
 This function is NOT registered as an MCP tool — it's an internal diagnostic
 callable through `run_script` for regression testing after app updates.
+
+The generated server also supports `--smoke-test` mode: run `node index.mjs --smoke-test`
+to verify basic connectivity and helper injection without starting the MCP server.
 
 ### 6.1.2 End-to-End Test Task (Mandatory)
 

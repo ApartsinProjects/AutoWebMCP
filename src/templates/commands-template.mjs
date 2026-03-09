@@ -52,9 +52,13 @@ export function querySelectorAll(selectors) {
 }
 
 /**
- * Like querySelector, but only returns the first *visible* match
- * (offsetParent !== null). Critical for apps where multiple identical
- * controls exist in the DOM but only the active one is visible.
+ * Like querySelector, but only returns the first *visible* match.
+ * Critical for apps where multiple identical controls exist in the DOM
+ * but only the active one is visible.
+ *
+ * Uses offsetHeight > 0 instead of offsetParent !== null because elements
+ * with position:fixed (e.g., Facebook menus) have offsetParent === null
+ * even when visible.
  *
  * Example: Google Forms has one set of buttons per question card, but only
  * the focused card's buttons are visible. querySelector('[aria-label="Delete"]')
@@ -69,7 +73,7 @@ export function queryVisibleSelector(selectors) {
     try {
       const els = document.querySelectorAll(sel);
       for (const el of els) {
-        if (el.offsetParent !== null) return el;
+        if (el.offsetHeight > 0 && el.offsetWidth > 0) return el;
       }
     } catch (_) { /* invalid selector, skip */ }
   }
@@ -189,6 +193,10 @@ export function setInputValue(el, value) {
  * Google Sites page titles, Google Forms title/description, and many rich text
  * editors use contentEditable. Use this function for those elements.
  *
+ * Note: For Lexical-based editors (Facebook, some React apps), insertText works
+ * but readback may be delayed. Use sleep(300) + el.textContent after calling this
+ * to verify the value was accepted by the editor framework.
+ *
  * @param {HTMLElement} el - A contentEditable element.
  * @param {string} value - The text value to insert (replaces all existing content).
  */
@@ -231,7 +239,7 @@ export function clickByAriaLabel(label) {
  * Find a button element by its visible text content.
  * Searches native <button> elements first, then [role="button"] elements
  * (e.g., <div role="button"> used extensively in Google Sites).
- * Only returns visible elements (offsetParent !== null).
+ * Only returns visible elements (offsetHeight > 0).
  *
  * @param {string} text - Exact text content to match (trimmed, case-sensitive).
  * @returns {HTMLElement|null} First matching visible button, or null.
@@ -240,7 +248,7 @@ export function findButtonByText(text) {
   for (const sel of ['button', '[role="button"]']) {
     const els = document.querySelectorAll(sel);
     for (const el of els) {
-      if (el.textContent.trim() === text && el.offsetParent !== null) return el;
+      if (el.textContent.trim() === text && el.offsetHeight > 0) return el;
     }
   }
   return null;
@@ -257,14 +265,14 @@ export function findButtonByText(text) {
  * @param {string} text - Text content to match against (case-insensitive).
  * @param {Object} [options] - Match options.
  * @param {boolean} [options.partial=false] - If true, match substring instead of exact.
- * @param {boolean} [options.visible=true] - If true, skip hidden elements (offsetParent === null).
+ * @param {boolean} [options.visible=true] - If true, skip hidden elements (offsetHeight === 0).
  * @returns {HTMLElement|null} The first matching element, or null.
  */
 export function findElementByText(role, text, { partial = false, visible = true } = {}) {
   const els = document.querySelectorAll(`[role="${role}"]`);
   const target = text.toLowerCase();
   for (const el of els) {
-    if (visible && el.offsetParent === null) continue;
+    if (visible && !(el.offsetHeight > 0)) continue;
     const content = el.textContent.trim().toLowerCase();
     if (partial ? content.includes(target) : content === target) return el;
   }
@@ -272,7 +280,10 @@ export function findElementByText(role, text, { partial = false, visible = true 
 }
 
 /**
- * Click a menu item ([role="menuitem"]) by partial text match (case-insensitive).
+ * Click a menu item by partial text match (case-insensitive).
+ * Searches both [role="menuitem"] and [role="button"] within [role="menu"]
+ * containers. Some apps (Facebook) use role="button" for menu items instead
+ * of the standard role="menuitem". Only matches visible elements.
  *
  * @param {string} itemText - Partial text to match against menu item content.
  * @returns {boolean} True if a matching menu item was found and clicked, false otherwise.
@@ -281,14 +292,44 @@ export function findElementByText(role, text, { partial = false, visible = true 
  *       returns true but no effect occurs, the element may need __clickCoords.
  */
 export function clickMenuItem(itemText) {
-  const items = document.querySelectorAll('[role="menuitem"]');
-  for (const item of items) {
-    if (item.textContent.trim().toLowerCase().includes(itemText.toLowerCase())) {
-      item.click();
-      return true;
+  const target = itemText.toLowerCase();
+  // First try standard menuitem role
+  for (const sel of ['[role="menuitem"]', '[role="menu"] [role="button"]']) {
+    const items = document.querySelectorAll(sel);
+    for (const item of items) {
+      if (item.offsetHeight > 0 && item.textContent.trim().toLowerCase().includes(target)) {
+        item.click();
+        return true;
+      }
     }
   }
   return false;
+}
+
+/**
+ * Find a menu item element within any visible [role="menu"] by text match.
+ * Returns the element without clicking it — useful when you need the element
+ * reference for __clickCoords or further inspection.
+ *
+ * Searches both [role="menuitem"] and [role="button"] within visible menus,
+ * since some apps (Facebook) use non-standard roles for menu items.
+ *
+ * @param {string} text - Partial text to match (case-insensitive).
+ * @returns {HTMLElement|null} The matching menu item element, or null.
+ */
+export function findMenuItemByText(text) {
+  const target = text.toLowerCase();
+  const menus = document.querySelectorAll('[role="menu"]');
+  for (const menu of menus) {
+    if (!(menu.offsetHeight > 0)) continue;
+    const items = menu.querySelectorAll('[role="menuitem"], [role="button"]');
+    for (const item of items) {
+      if (item.offsetHeight > 0 && item.textContent.trim().toLowerCase().includes(target)) {
+        return item;
+      }
+    }
+  }
+  return null;
 }
 
 /**
@@ -331,8 +372,8 @@ export function getPageState() {
       ariaLabel: active.getAttribute('aria-label'),
       editable: active.isContentEditable || active.tagName === 'INPUT' || active.tagName === 'TEXTAREA',
     } : null,
-    dialogs: [...document.querySelectorAll('[role="dialog"]')].filter(d => d.offsetParent !== null).length,
-    menus: [...document.querySelectorAll('[role="menu"]')].filter(m => m.offsetParent !== null).length,
+    dialogs: [...document.querySelectorAll('[role="dialog"]')].filter(d => d.offsetHeight > 0).length,
+    menus: [...document.querySelectorAll('[role="menu"]')].filter(m => m.offsetHeight > 0).length,
   };
 }
 
@@ -432,7 +473,7 @@ export async function menuCascade(itemTexts, delay = 500) {
     const items = document.querySelectorAll('[role="menuitem"], [role="option"], [role="button"]');
     let found = false;
     for (const item of items) {
-      if (item.textContent.trim().includes(itemTexts[i]) && item.offsetParent !== null) {
+      if (item.textContent.trim().includes(itemTexts[i]) && item.offsetHeight > 0) {
         item.click();
         found = true;
         break;
@@ -477,7 +518,7 @@ export function selectRadioByIndex(groupSelector, index) {
 export async function togglePanel(triggerSelector, panelSelector, action = "open") {
   const panelSels = Array.isArray(panelSelector) ? panelSelector : [panelSelector];
   const panel = querySelector(panelSels);
-  const isOpen = panel && panel.offsetParent !== null;
+  const isOpen = panel && panel.offsetHeight > 0;
   if (action === "open" && isOpen) return { success: true, state: "already_open" };
   if (action === "close" && !isOpen) return { success: true, state: "already_closed" };
   const trigger = querySelector(Array.isArray(triggerSelector) ? triggerSelector : [triggerSelector]);
@@ -498,6 +539,69 @@ export async function togglePanel(triggerSelector, panelSelector, action = "open
       return { success: false, error: 'Panel did not close', category: 'timeout' };
     }
   }
+}
+
+// --- Content Extraction Utilities (ALL MUST BE EXPORTED) ---
+
+/**
+ * Extract clean text content from an element, handling rich text editors.
+ * Detects Lexical ([data-lexical-text]), ProseMirror, Quill, and plain
+ * contentEditable elements and extracts text appropriately.
+ *
+ * For Lexical editors (Facebook, some React apps), extracts text from
+ * [data-lexical-text="true"] span elements. For other editors, uses
+ * textContent with whitespace normalization.
+ *
+ * @param {HTMLElement} el - The element to extract text from.
+ * @param {Object} [options] - Extraction options.
+ * @param {boolean} [options.trim=true] - Trim leading/trailing whitespace.
+ * @param {boolean} [options.normalize=true] - Collapse internal whitespace runs.
+ * @returns {string} The extracted text content.
+ */
+export function extractTextContent(el, { trim = true, normalize = true } = {}) {
+  let text;
+  // Lexical editor (Facebook, modern React apps)
+  const lexicalNodes = el.querySelectorAll('[data-lexical-text="true"]');
+  if (lexicalNodes.length > 0) {
+    text = Array.from(lexicalNodes).map(n => n.textContent).join('');
+  }
+  // ProseMirror (.ProseMirror class)
+  else if (el.classList?.contains('ProseMirror') || el.querySelector('.ProseMirror')) {
+    const pm = el.classList?.contains('ProseMirror') ? el : el.querySelector('.ProseMirror');
+    text = pm.textContent;
+  }
+  // Default: plain textContent
+  else {
+    text = el.textContent;
+  }
+  if (trim) text = text.trim();
+  if (normalize) text = text.replace(/\s+/g, ' ');
+  return text;
+}
+
+// --- Error Recovery Utilities (ALL MUST BE EXPORTED) ---
+
+/**
+ * Try a primary action, and if it fails, try a fallback action.
+ * Reduces boilerplate in generated commands where every tool has its own
+ * try/catch/fallback logic.
+ *
+ * @param {Function} primary - Primary async function to try first.
+ * @param {Function} fallback - Fallback async function if primary throws.
+ * @param {number} [maxRetries=1] - Number of times to retry primary before fallback.
+ * @returns {Promise<*>} Result of whichever function succeeds.
+ * @throws {Error} If both primary and fallback fail, throws fallback's error.
+ */
+export async function retryWithFallback(primary, fallback, maxRetries = 1) {
+  let lastError;
+  for (let i = 0; i <= maxRetries; i++) {
+    try {
+      return await primary();
+    } catch (e) {
+      lastError = e;
+    }
+  }
+  return fallback();
 }
 
 // =============================================================================

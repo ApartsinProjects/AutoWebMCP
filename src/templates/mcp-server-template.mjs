@@ -118,14 +118,45 @@ async function getPage() {
 
 // --- Command Execution Helper ---
 //
-// Features:
-// - __clickCoords: When a command returns { __clickCoords: {x,y} }, exec() uses
-//   puppeteer page.mouse.click() for a trusted browser-level click (isTrusted=true).
-//   Needed for widgets that reject JS .click() (radio buttons, some menuitems).
-// - __followUp: Optional function string to evaluate after a trusted click.
+// The exec() function wraps every tool call, intercepting special signals returned
+// by commands that require browser-level (puppeteer) actions instead of JS-only.
+//
+// Signal Reference:
+//
+// __clickCoords: { x, y }
+//   Performs a trusted browser-level click via page.mouse.click(). Required for
+//   widgets that check event.isTrusted (radio buttons, Facebook composer, Google
+//   Forms dropdowns). The command function returns coordinates from
+//   getBoundingClientRect() and exec() performs the click at the puppeteer level.
+//
+// __hoverCoords: { x, y }, __hoverDelay: number (default 1500ms)
+//   Moves mouse to coordinates and waits. Used for hover-dependent UI like
+//   Facebook's reaction bar (Like → Love/Care/Haha/Wow/Sad/Angry) which only
+//   appears after hovering the Like button for ~2 seconds. The delay allows
+//   hover-triggered animations and lazy-loaded content to appear.
+//
+// __keyPress: string | string[]
+//   Sends keyboard events through puppeteer. Used for Enter (search submissions,
+//   dialog confirmations), Escape (close overlays), Tab (focus management).
+//   Multiple keys are pressed sequentially with 200ms gaps.
+//
+// __navigate: string (URL)
+//   Performs page.goto() at the puppeteer level. Avoids the race condition of
+//   setting window.location.href inside evaluate() where the page unloads before
+//   the return value is captured.
+//
+// __followUp: string (function body)
+//   Optional function string evaluated AFTER a trusted click/hover/keyPress.
+//   Used for multi-step interactions: e.g., hover to reveal reaction bar, then
+//   __followUp inspects the revealed elements and clicks one. Must be a string
+//   containing a function expression: "(function() { ... return result; })()"
+//
+// Additional features:
 // - Retry: On first failure, re-injects helpers and retries once (catches navigation
 //   that cleared injected functions).
 // - URL re-check: After execution, if URL changed within the app, re-injects helpers.
+// - Session expiry detection: If post-execution URL matches auth patterns, returns
+//   a state_error with session_expired category.
 
 async function exec(fn, params = {}) {
   let retried = false;
@@ -219,6 +250,22 @@ async function exec(fn, params = {}) {
       if (postUrl !== currentUrl && URL_PATTERN.test(postUrl)) {
         _injectedPages.delete(p);
         await _injectHelpers(p);
+      }
+      // Session expiry detection: if the page redirected to an auth page,
+      // return a clear error instead of a cryptic selector failure.
+      if (postUrl !== currentUrl && !URL_PATTERN.test(postUrl)) {
+        const authPatterns = /\/(login|signin|auth|accounts|oauth|sso|checkpoint|verify)/i;
+        if (authPatterns.test(postUrl)) {
+          return {
+            content: [{ type: "text", text: JSON.stringify({
+              success: false,
+              error: `Session expired — redirected to auth page: ${postUrl}`,
+              category: "state_error",
+              hint: "Please re-authenticate in the browser and retry",
+            }) }],
+            isError: true,
+          };
+        }
       }
     } catch { /* page may have navigated away entirely */ }
 
@@ -328,8 +375,8 @@ server.tool(
             ariaLabel: active.getAttribute('aria-label'),
             editable: active.isContentEditable || active.tagName === 'INPUT' || active.tagName === 'TEXTAREA',
           } : null,
-          dialogs: [...document.querySelectorAll('[role="dialog"]')].filter(d => d.offsetParent !== null).length,
-          menus: [...document.querySelectorAll('[role="menu"]')].filter(m => m.offsetParent !== null).length,
+          dialogs: [...document.querySelectorAll('[role="dialog"]')].filter(d => d.offsetHeight > 0).length,
+          menus: [...document.querySelectorAll('[role="menu"]')].filter(m => m.offsetHeight > 0).length,
         };
       });
       return {
@@ -429,6 +476,35 @@ server.tool(
 // );
 //
 // =============================================================================
+
+// --- Smoke Test Mode ---
+// Run with --smoke-test to verify the server can connect, find the app,
+// and execute basic tools. Exits with 0 (pass) or 1 (fail).
+// Usage: node index.mjs --smoke-test
+
+if (process.argv.includes("--smoke-test")) {
+  try {
+    const p = await getPage();
+    const url = p.url();
+    if (!URL_PATTERN.test(url)) {
+      console.error(`FAIL: Not on ${APP_NAME} page. URL: ${url}`);
+      process.exit(1);
+    }
+    const state = await p.evaluate(() => ({
+      url: window.location.href,
+      title: document.title,
+      ready: typeof window.__mcpHelpersReady !== "undefined",
+    }));
+    console.log(`PASS: Connected to ${APP_NAME}`);
+    console.log(`  URL: ${state.url}`);
+    console.log(`  Title: ${state.title}`);
+    console.log(`  Helpers injected: ${state.ready}`);
+    process.exit(0);
+  } catch (error) {
+    console.error(`FAIL: ${error.message}`);
+    process.exit(1);
+  }
+}
 
 // --- Start Server ---
 
