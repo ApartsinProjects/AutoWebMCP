@@ -1,6 +1,18 @@
+<div align="center">
+
 # AutoWebMCP
 
-**Turn any web app into a set of reliable, reusable tools for Claude — automatically.**
+### Teach Claude a web app once. Use it forever.
+
+**Stop pixel-hunting. Start calling functions.**
+
+[![MCP](https://img.shields.io/badge/Model_Context_Protocol-MCP-blue)](https://docs.anthropic.com/en/docs/mcp)
+[![Claude Code](https://img.shields.io/badge/Claude_Code-Skills-purple)](https://docs.anthropic.com/en/docs/claude-code)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Apps Learned](https://img.shields.io/badge/Apps_Learned-1-orange)](#what-gets-generated)
+[![Tools Generated](https://img.shields.io/badge/Tools_Generated-33-orange)](#what-gets-generated)
+
+</div>
 
 ---
 
