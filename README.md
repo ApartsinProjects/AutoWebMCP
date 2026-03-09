@@ -1,46 +1,57 @@
 # AutoWebMCP
 
-**Turn any web app into a set of reliable, reusable AI tools — automatically.**
+**Turn any web app into a set of reliable, reusable tools for Claude — automatically.**
 
 ---
 
 ## The Problem
 
-Every time an AI agent interacts with a web application, it starts from scratch: take a screenshot, guess where to click, hope the DOM hasn't changed, repeat. This approach is:
+When Claude interacts with web applications, it relies on
+[computer use](https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool) —
+taking screenshots, analyzing pixels, calculating coordinates, clicking, and repeating.
+This is how Claude Code's browser automation works today: every action is a
+screenshot-analyze-click loop.
 
-- **Fragile** — one UI update and everything breaks
+This approach is:
+
+- **Fragile** — one UI update and selectors or coordinates break
 - **Slow** — screenshot, analyze, click, screenshot again... for every single action
-- **Wasteful** — the same app gets re-figured-out in every session
+- **Wasteful** — Claude re-discovers the same app's UI in every session
 - **Unreliable** — wrong clicks, missed elements, timing failures
 
-AI agents deserve better than pixel-hunting.
+Claude deserves better than pixel-hunting through web apps it's already seen before.
 
 ## The Solution
 
-AutoWebMCP flips the approach: **teach the AI once, then let it use what it learned forever.**
+AutoWebMCP flips the approach: **teach Claude once, then let it use what it learned forever**
+— through [MCP (Model Context Protocol)](https://docs.anthropic.com/en/docs/claude-code/mcp),
+Anthropic's open standard for connecting Claude to external tools.
 
 ```
 /learn-webapp https://sites.google.com
 ```
 
-That's it. AutoWebMCP explores the app, figures out what operations it supports, and generates a permanent MCP server with semantic tools like `set_page_title()`, `insert_text_box()`, `add_page()`.
+That's it. AutoWebMCP explores the app, figures out what operations it supports, and generates
+a permanent [MCP server](https://docs.anthropic.com/en/docs/mcp) with semantic tools like
+`set_page_title()`, `insert_text_box()`, `add_page()`.
 
-From that point on, the AI calls these tools directly — no screenshots, no guessing, no fragility.
+From that point on, Claude calls these tools directly — no screenshots, no coordinate math,
+no computer use overhead. Just clean, reliable function calls.
 
 ### Before vs After
 
 ```
-BEFORE (raw browser automation):
-  1. Take screenshot                         ~2s
+BEFORE (computer use / raw browser automation):
+  1. screenshot()                            ~2s
   2. Analyze image to find "title" element   ~3s
   3. Calculate click coordinates             ~1s
-  4. Click at (672, 195)                     ~1s
-  5. Take screenshot to verify               ~2s
-  6. Type the new title                      ~1s
-  7. Take screenshot to confirm              ~2s
+  4. computer(click, [672, 195])             ~1s
+  5. screenshot() to verify                  ~2s
+  6. computer(type, "My New Title")          ~1s
+  7. screenshot() to confirm                 ~2s
                                     Total: ~12s, may fail
 
-AFTER (AutoWebMCP):
+AFTER (AutoWebMCP → MCP tool call):
   1. set_page_title("My New Title")          ~0.5s
                                     Total: ~0.5s, reliable
 ```
@@ -65,14 +76,17 @@ You stay in control — it asks before clicking anything risky and you approve t
 
 ### 2. Use it
 
-Next time you ask Claude to do anything with that app, it just works:
+Next time you ask Claude Code to do anything with that app, it calls MCP tools
+instead of falling back to computer use:
 
 ```
 You:    "Add a new page called About and set the theme to Diplomat"
 Claude: Done. 2 MCP tools called, 0 errors.
 ```
 
-No setup needed. The WebMCP router automatically detects the app, finds the matching MCP server, and routes through semantic tools.
+No setup needed. The `/webmcp` skill automatically detects the app, finds the
+matching MCP server, and routes through semantic tools — no `screenshot()` or
+`computer(click, ...)` calls.
 
 ### 3. Share it
 
@@ -80,7 +94,9 @@ No setup needed. The WebMCP router automatically detects the app, finds the matc
 git push
 ```
 
-Your learned MCP server is now available to anyone who clones the repo. When another user asks Claude to interact with the same app, WebMCP downloads the MCP server from GitHub automatically — they don't need to learn it again.
+Your learned MCP server is now available to anyone who clones the repo. When another
+Claude Code user asks to interact with the same app, WebMCP downloads the MCP server
+from GitHub automatically — they don't need to learn it again.
 
 ---
 
@@ -102,7 +118,9 @@ When you learn an app, AutoWebMCP creates a complete MCP server. For example, le
 | `undo` / `redo` | Undo or redo changes |
 | ... | *and 23 more* |
 
-Each tool executes JavaScript directly via Chrome DevTools Protocol — no screenshots, no coordinate math, no guessing.
+Each tool executes JavaScript directly via Chrome DevTools Protocol — replacing
+the screenshot-analyze-click loop of [computer use](https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool)
+with a single function call.
 
 ---
 
@@ -127,12 +145,13 @@ Each tool executes JavaScript directly via Chrome DevTools Protocol — no scree
    └──────────────┘
 ```
 
-Behind the scenes, there are two Claude Code skills:
+Behind the scenes, there are two [Claude Code skills](https://docs.anthropic.com/en/docs/claude-code):
 
-- **`/learn-webapp`** — Explores a web app and generates an MCP server
-- **`/webmcp`** — Automatically routes your requests through learned MCP tools
+- **`/learn-webapp`** — Explores a web app and generates an [MCP server](https://docs.anthropic.com/en/docs/claude-code/mcp)
+- **`/webmcp`** — Intercepts web app tasks and routes them through MCP tools instead of computer use
 
-You only need to remember `/learn-webapp`. Everything else is automatic.
+You only need to remember `/learn-webapp`. The `/webmcp` skill fires automatically
+whenever Claude Code is about to interact with a web app that has a learned MCP.
 
 ---
 
@@ -158,13 +177,17 @@ What would you like to do?
 
 ## The Bigger Picture
 
-Every web app you learn becomes a permanent, shareable set of AI tools.
+Every web app you learn becomes a permanent, shareable MCP server — replacing brittle
+computer use with reliable tool calls.
 
-**Today**: You learn Google Sites. Now Claude can build and edit sites through 33 reliable tools instead of fragile clicks.
+**Today**: You learn Google Sites. Now Claude calls `set_page_title()` instead of
+`screenshot()` + `computer(click, [x,y])` + `computer(type, "...")`.
 
-**Tomorrow**: Someone learns Notion. Another person learns Figma. Someone else learns Salesforce. Each learned app becomes an MCP server in the catalogue.
+**Tomorrow**: Someone learns Notion. Another person learns Figma. Someone else learns
+Salesforce. Each learned app becomes an MCP server in the catalogue.
 
-**The vision**: A growing library of pre-learned web applications that any AI agent can use instantly — downloaded from GitHub on first use, no learning required.
+**The vision**: A growing library of pre-learned web applications that any Claude Code
+user can use instantly — downloaded from GitHub on first use, no learning required.
 
 ```
 catalogue.json
@@ -199,13 +222,18 @@ Every learned app makes the entire ecosystem more capable.
 Want to add an MCP for your favorite web app?
 
 1. Clone this repo
-2. Run `/learn-webapp https://your-app.com`
+2. Run `/learn-webapp https://your-app.com` in Claude Code
 3. Approve the generated tools
 4. `git push`
 
-That's it. Your MCP is now available to everyone.
+That's it. Your MCP server is now available to every Claude Code user.
 
-See the [docs/](docs/) directory for technical details on the generated server structure, mode switches, and catalogue format.
+## Learn More
+
+- [Computer use tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool) — How Claude interacts with browsers today (what AutoWebMCP replaces)
+- [Model Context Protocol (MCP)](https://docs.anthropic.com/en/docs/mcp) — The open standard AutoWebMCP generates servers for
+- [Claude Code MCP integration](https://docs.anthropic.com/en/docs/claude-code/mcp) — How Claude Code connects to MCP servers
+- [docs/](docs/) — Technical details on server structure, mode switches, and catalogue format
 
 ## License
 
