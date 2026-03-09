@@ -68,7 +68,19 @@ AFTER (AutoWebMCP → batch via run_script):
 
 ## Installation
 
-### Option A: Clone the repo (recommended)
+### Prerequisites
+
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) with [MCP support](https://docs.anthropic.com/en/docs/claude-code/mcp)
+- [Node.js](https://nodejs.org/) 18+ (required by the MCP SDK)
+- Google Chrome
+- [Claude in Chrome](https://chromewebstore.google.com/detail/claude-in-chrome/) extension (for the learning phase)
+
+> **No manual Chrome setup needed.** The `/learn-webapp` skill automatically detects
+> Chrome, launches it with remote debugging enabled, and manages the connection.
+
+### Option A: Use as a standalone project (recommended)
+
+Clone and open directly in Claude Code — everything is pre-configured:
 
 ```bash
 git clone https://github.com/ApartsinProjects/AutoWebMCP.git
@@ -76,31 +88,60 @@ cd AutoWebMCP
 npm install
 ```
 
-Then copy skills into your Claude Code project:
+Skills are already in `.claude/skills/`, templates in `src/templates/`, and the
+catalogue at `catalogue.json`. Just open the project in Claude Code and start
+learning apps.
+
+### Option B: Integrate into your existing project
+
+Copy the required files into your Claude Code project:
 
 ```bash
-# From your project directory
-cp -r path/to/AutoWebMCP/skills/learn-webapp .claude/skills/learn-webapp
-cp -r path/to/AutoWebMCP/skills/webmcp .claude/skills/webmcp
-cp path/to/AutoWebMCP/src/templates/* src/templates/
+# Skills — Claude Code discovers these automatically from .claude/skills/
+cp -r path/to/AutoWebMCP/skills/learn-webapp  YOUR_PROJECT/.claude/skills/learn-webapp
+cp -r path/to/AutoWebMCP/skills/webmcp        YOUR_PROJECT/.claude/skills/webmcp
+
+# Templates — used during code generation (referenced by the learning skill)
+mkdir -p YOUR_PROJECT/src/templates
+cp path/to/AutoWebMCP/src/templates/*          YOUR_PROJECT/src/templates/
+
+# Catalogue — required for skill routing (skills resolve PROJECT_ROOT from this file)
+cp path/to/AutoWebMCP/catalogue.json           YOUR_PROJECT/catalogue.json
+
+# CLAUDE.md — project conventions (optional but recommended)
+cp path/to/AutoWebMCP/CLAUDE.md                YOUR_PROJECT/CLAUDE.md
 ```
 
-### Option B: Download release
+**What goes where:**
+
+| Files | Location | Purpose |
+|-------|----------|---------|
+| `SKILL.md`, `exploration-guide.md` | `.claude/skills/learn-webapp/` | Learning skill (Claude Code auto-discovers) |
+| `SKILL.md` | `.claude/skills/webmcp/` | Runtime routing skill |
+| `commands-template.mjs`, `mcp-server-template.mjs`, `package-template.json` | `src/templates/` | Templates for code generation |
+| `catalogue.json` | Project root | App-to-MCP registry (skills find PROJECT_ROOT from this) |
+
+### Option C: Install globally (all projects)
+
+Install skills to `~/.claude/skills/` so they're available in every Claude Code project:
+
+```bash
+# Global skills — available in ALL Claude Code projects
+cp -r path/to/AutoWebMCP/skills/learn-webapp  ~/.claude/skills/learn-webapp
+cp -r path/to/AutoWebMCP/skills/webmcp        ~/.claude/skills/webmcp
+```
+
+> **Note:** Templates and `catalogue.json` still need to be in the project where you
+> run `/learn-webapp`, since generated MCP servers are project-specific. Global skills
+> just make the `/learn-webapp` and `/webmcp` commands available everywhere.
+
+### Option D: Download release
 
 Download the latest release from [Releases](https://github.com/ApartsinProjects/AutoWebMCP/releases), extract, and run:
 
 ```bash
 ./install.sh /path/to/your/project
 ```
-
-### Prerequisites
-
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) with [MCP support](https://docs.anthropic.com/en/docs/claude-code/mcp)
-- [Node.js](https://nodejs.org/) 18+ (required by the MCP SDK)
-- Google Chrome
-
-> **No manual Chrome setup needed.** The `/learn-webapp` skill automatically detects
-> Chrome, launches it with remote debugging enabled, and manages the connection.
 
 ---
 
@@ -148,7 +189,7 @@ from GitHub automatically — they don't need to learn it again.
 
 ## What Gets Generated
 
-When you learn an app, AutoWebMCP creates a complete MCP server. So far, we've generated servers for **Google Sites** (33 tools) and **Google Forms** (30 tools). For example:
+When you learn an app, AutoWebMCP creates a complete MCP server. So far, we've generated servers for **Google Sites** (33 tools), **Google Forms** (30 tools), and **Facebook** (18 tools). For example:
 
 | Tool | What it does |
 |------|-------------|
@@ -244,6 +285,7 @@ user can use instantly — downloaded from GitHub on first use, no learning requ
 catalogue.json
 ├── google-sites    → 33 tools  ✅
 ├── google-forms    → 30 tools  ✅
+├── facebook        → 18 tools  ✅
 ├── notion          → 45 tools  (someone contributes this)
 ├── figma           → 60 tools  (someone contributes this)
 ├── salesforce      → 80 tools  (someone contributes this)
@@ -286,12 +328,17 @@ Any Claude Code user who encounters that app will automatically download and use
 your MCP instead of falling back to computer use. They don't need to install
 anything — the `/webmcp` skill handles it.
 
-## Learn More
+## Documentation
+
+- **[Learning Manual](docs/learning-manual.md)** — How `/learn-webapp` explores apps and generates MCP servers (phases, selectors, code generation, validation)
+- **[Usage Manual](docs/usage-manual.md)** — How `/webmcp` routes tasks through MCP tools at runtime (catalogue, planning, batch execution, error recovery)
+- **[Blog Post](docs/blog-post.md)** — Technical overview of the system for general audiences
+
+### External References
 
 - [Computer use tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool) — How Claude interacts with browsers today (what AutoWebMCP replaces)
 - [Model Context Protocol (MCP)](https://docs.anthropic.com/en/docs/mcp) — The open standard AutoWebMCP generates servers for
 - [Claude Code MCP integration](https://docs.anthropic.com/en/docs/claude-code/mcp) — How Claude Code connects to MCP servers
-- [docs/](docs/) — Technical details on server structure, mode switches, and catalogue format
 
 ## License
 

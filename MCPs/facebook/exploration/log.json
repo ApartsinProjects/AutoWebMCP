@@ -1,0 +1,71 @@
+{
+  "appName": "facebook",
+  "url": "https://www.facebook.com/",
+  "timestamp": "2026-03-09T12:00:00Z",
+  "obfuscatedDOM": true,
+  "obfuscationNote": "29/30 class samples are hashed (e.g., x9f619, xh8yej3). Zero data-testid. CSS selectors unusable. Rely on aria-label, role, text matching.",
+  "selectorStrategy": "aria-label > role > text-match > structural. CSS classes score 0.",
+  "regions": [
+    {
+      "id": "top-nav",
+      "label": "Top Navigation Bar",
+      "type": "navigation",
+      "description": "Full-width top bar with logo, search, page tabs, and account controls",
+      "elements": ["Facebook logo", "Search Facebook", "Home", "Friends", "Reels", "Marketplace", "Gaming"]
+    },
+    {
+      "id": "account-controls",
+      "label": "Account Controls and Settings",
+      "type": "navigation",
+      "description": "Top-right buttons: Menu (apps grid), Messenger, Notifications, Profile",
+      "elements": ["Menu", "Messenger", "Notifications", "Your profile"]
+    },
+    {
+      "id": "left-sidebar",
+      "label": "Left Sidebar Navigation",
+      "type": "navigation",
+      "description": "Profile link, main nav (Friends, Memories, Saved, Groups, Reels, Marketplace, Feeds), See more, Shortcuts. Only visible at viewport width > ~1200px.",
+      "elements": ["Sasha Apartsin", "Friends", "Memories", "Saved", "Groups", "Reels", "Marketplace", "Feeds", "See more"]
+    },
+    {
+      "id": "create-post",
+      "label": "Create a Post",
+      "type": "form",
+      "description": "Post composer with prompt text, live video, photo/video, and feeling/activity buttons",
+      "elements": ["Composer input", "Live video", "Photo/video", "Feeling/activity"]
+    },
+    {
+      "id": "stories",
+      "label": "Stories Tray",
+      "type": "content",
+      "description": "Horizontal scrollable story carousel with create story and user stories",
+      "elements": ["Create story", "Previous items", "Next items", "story links"]
+    },
+    {
+      "id": "news-feed",
+      "label": "News Feed",
+      "type": "content",
+      "description": "Central column of post cards. No role=feed detected. Posts found by 'Actions for this post' button. Each post has: author link, timestamp, content, actions menu, reactions toolbar, Like/Comment buttons.",
+      "elements": ["Actions for this post", "Like", "React", "Leave a comment", "hide post"]
+    },
+    {
+      "id": "contacts-sidebar",
+      "label": "Contacts Sidebar",
+      "type": "panel",
+      "description": "Right sidebar with online contacts list, search, and new message button",
+      "elements": ["Search by name or group", "More options for contacts", "New message", "contact links"]
+    }
+  ],
+  "elements": [],
+  "explorations": [],
+  "inferredOperations": [],
+  "overlays": [],
+  "views": [
+    {
+      "id": "homepage",
+      "url": "/",
+      "description": "News feed with stories, create post, left nav, contacts sidebar",
+      "entryAction": "Navigate to https://www.facebook.com/"
+    }
+  ]
+}

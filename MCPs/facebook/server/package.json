@@ -1,0 +1,21 @@
+{
+  "name": "facebook-mcp",
+  "version": "1.0.0",
+  "description": "Auto-generated MCP server for Facebook — provides semantic operations for browser automation",
+  "type": "module",
+  "main": "index.mjs",
+  "scripts": {
+    "start": "node index.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "puppeteer-core": "^24.6.0",
+    "zod": "^3.24.4"
+  },
+  "autowebmcp": {
+    "targetUrl": "https://www.facebook.com/",
+    "urlPattern": "facebook\\.com",
+    "generatedAt": "2026-03-09",
+    "frameworkVersion": "0.2.0"
+  }
+}

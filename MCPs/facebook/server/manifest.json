@@ -1,0 +1,47 @@
+{
+  "name": "facebook-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for Facebook — 18 semantic tools for news feed, posts, notifications, and navigation",
+  "targetApp": {
+    "name": "facebook",
+    "url": "https://www.facebook.com/",
+    "urlPattern": "facebook\\.com"
+  },
+  "modes": {
+    "browser": {
+      "visible": "Attach to user's running Chrome via CDP (default)",
+      "headless": "Launch a headless browser instance"
+    },
+    "data": {
+      "user": "Use user's Chrome profile with credentials (default)",
+      "sandbox": "Use a clean browser profile with no stored data"
+    }
+  },
+  "domCharacteristics": {
+    "obfuscatedClasses": true,
+    "selectorStrategy": "aria-label > role > text-match > structural. CSS classes score 0.",
+    "note": "Facebook uses hashed/compiled CSS class names that change on every deployment. All selectors use ARIA attributes and text content."
+  },
+  "operations": [
+    { "name": "search_facebook", "description": "Search Facebook using the search bar", "category": "navigation", "confidence": 0.85, "view": "homepage" },
+    { "name": "open_notifications", "description": "Open the Notifications panel", "category": "navigation", "confidence": 0.90, "view": "homepage" },
+    { "name": "open_messenger", "description": "Open the Messenger (Chats) panel", "category": "navigation", "confidence": 0.90, "view": "homepage" },
+    { "name": "open_menu", "description": "Open the account/apps Menu panel", "category": "navigation", "confidence": 0.90, "view": "homepage" },
+    { "name": "open_composer", "description": "Open the Create Post composer dialog", "category": "content_editing", "confidence": 0.85, "view": "homepage" },
+    { "name": "set_post_text", "description": "Set text in the post composer dialog", "category": "content_editing", "confidence": 0.80, "view": "homepage" },
+    { "name": "close_dialog", "description": "Close the topmost open dialog", "category": "navigation", "confidence": 0.90, "view": "homepage" },
+    { "name": "navigate_to", "description": "Navigate to a Facebook section via sidebar", "category": "navigation", "confidence": 0.80, "view": "homepage" },
+    { "name": "get_feed_posts", "description": "Get visible feed posts with content and metadata", "category": "data_retrieval", "confidence": 0.70, "view": "homepage" },
+    { "name": "like_post", "description": "Like a post in the feed", "category": "workflow", "confidence": 0.75, "view": "homepage" },
+    { "name": "react_to_post", "description": "React to a post with a specific reaction", "category": "workflow", "confidence": 0.70, "view": "homepage" },
+    { "name": "comment_on_post", "description": "Click the comment input on a post", "category": "workflow", "confidence": 0.75, "view": "homepage" },
+    { "name": "open_post_actions", "description": "Open the three-dot actions menu for a post", "category": "workflow", "confidence": 0.80, "view": "homepage" },
+    { "name": "save_post", "description": "Save a post to Saved collection", "category": "workflow", "confidence": 0.70, "view": "homepage" },
+    { "name": "hide_post", "description": "Hide a post from the feed", "category": "workflow", "confidence": 0.70, "view": "homepage" },
+    { "name": "scroll_feed", "description": "Scroll the news feed up or down", "category": "navigation", "confidence": 0.85, "view": "homepage" },
+    { "name": "get_notifications", "description": "Open notifications and retrieve items", "category": "data_retrieval", "confidence": 0.70, "view": "homepage" },
+    { "name": "get_page_state", "description": "Get current page state (built-in)", "category": "data_retrieval", "confidence": 0.95, "view": "any" }
+  ],
+  "generatedAt": "2026-03-09",
+  "frameworkVersion": "0.2.0"
+}
