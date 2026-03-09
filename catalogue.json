@@ -9,20 +9,26 @@
       "mcps": [
         {
           "name": "google-sites-mcp",
-          "version": "2.0.0",
+          "version": "2.1.0",
           "path": "MCPs/google-sites/server",
           "operationCount": 33,
-          "confidence": 0.87,
-          "generatedAt": "2026-03-08"
-        },
+          "confidence": 0.91,
+          "generatedAt": "2026-03-09"
+        }
+      ]
+    },
+    "google-forms": {
+      "displayName": "Google Forms",
+      "url": "https://docs.google.com/forms/",
+      "urlPattern": "docs\\.google\\.com\\/forms",
+      "mcps": [
         {
-          "name": "google-sites-mcp",
-          "version": "1.0.0",
-          "path": "MCPs/google-sites/server",
-          "operationCount": 23,
-          "confidence": 0.88,
-          "generatedAt": "2026-03-08",
-          "deprecated": true
+          "name": "google-forms-mcp",
+          "version": "1.1.0",
+          "path": "MCPs/google-forms/server",
+          "operationCount": 30,
+          "confidence": 0.90,
+          "generatedAt": "2026-03-09"
         }
       ]
     }

@@ -80,11 +80,18 @@ need to sign into their apps once in this profile. After that, credentials persi
 #### Find Chrome
 
 ```bash
-# Windows — check common locations:
-#   "C:\Program Files\Google\Chrome\Application\chrome.exe"
-#   "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"
-#   "%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe"
-# Use: where chrome 2>nul || ls "/c/Program Files/Google/Chrome/Application/chrome.exe" 2>/dev/null || ls "/c/Program Files (x86)/Google/Chrome/Application/chrome.exe" 2>/dev/null
+# Windows (bash) — detect Chrome path in priority order:
+# $LOCALAPPDATA is inherited from Windows and works in Claude Code's bash.
+# Convert backslashes to forward slashes for path operations.
+WIN_APPLOCAL="$(echo "$LOCALAPPDATA" | sed 's/\\\\/\\//g')"
+CHROME_PATH=""
+for p in \
+  "$WIN_APPLOCAL/Google/Chrome/Application/chrome.exe" \
+  "/c/Program Files/Google/Chrome/Application/chrome.exe" \
+  "/c/Program Files (x86)/Google/Chrome/Application/chrome.exe"; do
+  if [ -f "$p" ]; then CHROME_PATH="$p"; break; fi
+done
+echo "Chrome found at: $CHROME_PATH"
 ```
 
 #### Kill existing Chrome (if running)
@@ -116,6 +123,18 @@ pkill -f chrome
 
 Wait 2 seconds after killing before launching.
 
+**Suppress "Restore pages" popup**: After force-killing Chrome, the profile's
+`Preferences` file records `exit_type: Crashed`, causing a restore prompt on next
+launch. Fix this before relaunching:
+
+```bash
+PREFS_FILE="$CDP_PROFILE_DIR/Default/Preferences"
+if [ -f "$PREFS_FILE" ]; then
+  sed -i 's/"exit_type":"Crashed"/"exit_type":"Normal"/g' "$PREFS_FILE"
+  sed -i 's/"exited_cleanly":false/"exited_cleanly":true/g' "$PREFS_FILE"
+fi
+```
+
 #### Launch based on user's mode choice
 
 **Option (a) — User profile (dedicated CDP directory):**
@@ -124,20 +143,29 @@ Wait 2 seconds after killing before launching.
 # Create the CDP profile directory if it doesn't exist
 mkdir -p "<CDP_PROFILE_DIR>"
 
-# Windows
-start "" "<path-to-chrome>" --remote-debugging-port=9222 --user-data-dir="<CDP_PROFILE_DIR>" --no-first-run --no-default-browser-check --disable-session-crashed-bubble "<TARGET_URL>"
+# Windows — IMPORTANT: Do NOT use `start ""` in Git Bash — it triggers MSYS2
+# path conversion which mangles --user-data-dir (e.g., /Google/Chrome/... becomes
+# C:/Program Files/Git/Google/Chrome/...). Use direct execution with `&` instead.
+"$CHROME_PATH" --remote-debugging-port=9222 --user-data-dir="$CDP_PROFILE_DIR" --no-first-run --no-default-browser-check --disable-session-crashed-bubble --hide-crash-restore-bubble --noerrdialogs "<TARGET_URL>" &
 
 # macOS
-open -a "Google Chrome" --args --remote-debugging-port=9222 --user-data-dir="<CDP_PROFILE_DIR>" --no-first-run --no-default-browser-check --disable-session-crashed-bubble "<TARGET_URL>"
+"$CHROME_PATH" --remote-debugging-port=9222 --user-data-dir="$CDP_PROFILE_DIR" --no-first-run --no-default-browser-check --disable-session-crashed-bubble --hide-crash-restore-bubble --noerrdialogs "<TARGET_URL>" &
 
 # Linux
-google-chrome --remote-debugging-port=9222 --user-data-dir="<CDP_PROFILE_DIR>" --no-first-run --no-default-browser-check --disable-session-crashed-bubble "<TARGET_URL>" &
+"$CHROME_PATH" --remote-debugging-port=9222 --user-data-dir="$CDP_PROFILE_DIR" --no-first-run --no-default-browser-check --disable-session-crashed-bubble --hide-crash-restore-bubble --noerrdialogs "<TARGET_URL>" &
 ```
 
-Where `<CDP_PROFILE_DIR>` is:
-- Windows: `C:/Users/<username>/AppData/Local/Google/Chrome/CDP-Profile`
-- macOS: `~/Library/Application Support/Google/Chrome/CDP-Profile`
-- Linux: `~/.config/google-chrome/CDP-Profile`
+Detect `<CDP_PROFILE_DIR>` based on platform:
+```bash
+# Windows (bash) — use $LOCALAPPDATA (inherited from Windows) with backslash conversion
+CDP_PROFILE_DIR="$(echo "$LOCALAPPDATA" | sed 's/\\\\/\\//g')/Google/Chrome/CDP-Profile"
+
+# macOS
+CDP_PROFILE_DIR="$HOME/Library/Application Support/Google/Chrome/CDP-Profile"
+
+# Linux
+CDP_PROFILE_DIR="$HOME/.config/google-chrome/CDP-Profile"
+```
 
 **First-time notice**: If this is a new CDP profile (empty directory), inform the user:
 ```
@@ -149,20 +177,56 @@ your credentials will persist in this profile for future sessions.
 **Option (b) — Sandbox:**
 
 ```bash
-# Windows
-start "" "<path-to-chrome>" --remote-debugging-port=9222 --user-data-dir="%TEMP%/chrome-sandbox-%RANDOM%" --no-first-run --no-default-browser-check --disable-session-crashed-bubble "<TARGET_URL>"
+# Windows — use $TEMP (or fallback to /tmp) for sandbox directory.
+# Do NOT use `start ""` — MSYS2 path conversion mangles --user-data-dir.
+SANDBOX_DIR="${TEMP:-/tmp}/chrome-sandbox-$$"
+"$CHROME_PATH" --remote-debugging-port=9222 --user-data-dir="$SANDBOX_DIR" --no-first-run --no-default-browser-check --disable-session-crashed-bubble --hide-crash-restore-bubble --noerrdialogs "<TARGET_URL>" &
 
 # macOS
-open -a "Google Chrome" --args --remote-debugging-port=9222 --user-data-dir="/tmp/chrome-sandbox-$$" --no-first-run --no-default-browser-check
+"$CHROME_PATH" --remote-debugging-port=9222 --user-data-dir="/tmp/chrome-sandbox-$$" --no-first-run --no-default-browser-check &
 
 # Linux
-google-chrome --remote-debugging-port=9222 --user-data-dir="/tmp/chrome-sandbox-$$" --no-first-run --no-default-browser-check &
+"$CHROME_PATH" --remote-debugging-port=9222 --user-data-dir="/tmp/chrome-sandbox-$$" --no-first-run --no-default-browser-check &
 ```
 
 After launching, wait 3 seconds, then re-test the CDP endpoint. If it still
 fails, inform the user and stop.
 
-### 0.4 Set Environment Variables
+### 0.4 Connection Health Probing
+
+**MANDATORY**: Before executing any task, and between major batches of tool
+calls, probe the CDP connection to detect early loss of browser connectivity.
+
+**Health check procedure**:
+```bash
+curl -s --max-time 3 http://127.0.0.1:9222/json/version
+```
+
+**When to probe**:
+- Before Step 5 (Execute the Task) begins
+- Between batches in `run_script` operations (every 3-5 tool calls)
+- After any tool call returns an error
+- After any `run_script` batch completes (before starting the next)
+
+**If health check fails** (timeout, connection refused, empty response):
+1. Stop immediately — do NOT attempt further tool calls
+2. Inform the user:
+   ```
+   Lost connection to Chrome (CDP port 9222 is not responding).
+   Chrome may have been closed or crashed.
+   Would you like me to relaunch Chrome with CDP?
+   ```
+3. If yes, follow Step 0.3 launch procedure (kill, fix Preferences, relaunch)
+4. After relaunch, re-verify connectivity, then resume from last successful step
+
+**Error signatures to watch for during tool execution**:
+- `"Target closed"` — Chrome tab was closed
+- `"Session closed"` — CDP session expired
+- `"Protocol error"` — CDP connection corrupted
+- `ETIMEDOUT` / `ECONNREFUSED` — Chrome process is gone
+- Any of these → stop, run health check, recover before continuing
+
+### 0.5 Set Environment Variables
 
 Based on the user's choice, remember the mode for MCP server config:
 
@@ -295,7 +359,7 @@ haven't been downloaded yet.
    a. Read `<PROJECT_ROOT>/.mcp.json` (create it if it doesn't exist).
 
    b. Add the MCP server entry automatically — do NOT ask the user, just do it.
-      Use the `BROWSER_MODE` and `DATA_MODE` values from Step 0.4 (defaults:
+      Use the `BROWSER_MODE` and `DATA_MODE` values from Step 0.5 (defaults:
       `visible` and `user`):
 
       ```json
@@ -307,8 +371,8 @@ haven't been downloaded yet.
             "args": ["<mcp.path>/index.mjs"],
             "env": {
               "CHROME_CDP_URL": "http://127.0.0.1:9222",
-              "BROWSER_MODE": "<from Step 0.4>",
-              "DATA_MODE": "<from Step 0.4>"
+              "BROWSER_MODE": "<from Step 0.5>",
+              "DATA_MODE": "<from Step 0.5>"
             }
           }
         }
@@ -359,8 +423,9 @@ haven't been downloaded yet.
    have a matching MCP tool. Only use raw browser automation for operations that
    are NOT covered by the MCP server.
 
-9. **If installed but tools fail**: Report the error to the user. Do NOT silently
-   fall back to raw browser automation. Suggest:
+9. **If installed but tools fail**: Use `run_script` as the first fallback —
+   it runs arbitrary JS through the same CDP connection. Do NOT fall back to
+   the Chrome extension. If `run_script` also fails, suggest:
    - Checking that Chrome is running with `--remote-debugging-port=9222`
    - Checking that the target app is open in a Chrome tab
    - Re-learning the operation if the app UI has changed
@@ -472,18 +537,176 @@ a routing skill, not a learning skill.
 
 ## Step 5: Execute the Task
 
-Once planning and gap analysis are resolved, execute the user's request using the
-appropriate method:
+Once planning and gap analysis are resolved, execute the user's request.
 
-- **With MCP**: Call the MCP server's tools directly. Chain multiple tool calls
-  for complex tasks. The MCP tools handle all the DOM interaction internally.
+### 5.1 Performance Strategy — Choose Execution Mode
 
-- **Without MCP** (user chose raw automation): Use the Claude in Chrome browser
-  tools (read_page, computer, find, etc.) as usual.
+Every MCP server includes three execution tiers. **Always pick the fastest tier
+that fits the task**:
 
-- **Mixed mode** (user chose option c in gap analysis): Use MCP tools for covered
-  actions and raw browser automation for the gaps. Clearly indicate in the execution
-  trace which method was used for each action.
+| Tier | Tool | When to use | Speed |
+|------|------|-------------|-------|
+| **Batch** | `run_script` | Multi-step tasks (3+ actions), bulk content creation, anything with loops | **Instant** — single CDP round-trip |
+| **Sequential** | Individual MCP tools | Simple 1-2 step tasks, or when readback between steps matters | Fast — one round-trip per tool |
+| **Fallback** | `run_script` with custom DOM logic | When a specific learned tool fails | Instant — bypass broken tool |
+
+**CRITICAL performance rule**: For any task requiring 3+ tool calls, **always use
+`run_script`** with a single JavaScript payload instead of calling tools one by one.
+Each MCP tool call is a full network round-trip (Claude → stdio → Puppeteer → CDP →
+Chrome → back). Batching into `run_script` collapses N round-trips into 1.
+
+### 5.2 Using `run_script` for Batch Operations
+
+The `run_script` tool executes arbitrary JavaScript in the page context via the
+MCP server's existing CDP connection. Helper functions from `commands.mjs` are
+injected into the page's global scope once by `getPage()` (via `_injectHelpers`
++ `evaluateOnNewDocument`) — zero overhead on every `exec()` and `run_script`
+call. Helpers auto-re-inject on page navigation. The CDP connection has a
+`protocolTimeout` of 120 seconds, allowing long batch scripts. This works on
+all web sites including those with Trusted Types CSP (Google, GitHub, etc.).
+
+**Example — build a Google Form with 5 questions in one call:**
+```
+run_script({
+  script: `
+    // All helpers from commands.mjs are available
+    const delay = ms => new Promise(r => setTimeout(r, ms));
+
+    // Set title
+    await set_form_title({ title: "My Survey" });
+    await delay(300);
+
+    // Add questions in a loop
+    const questions = [
+      { text: "Q1?", type: "multiple choice", options: ["A", "B", "C"] },
+      { text: "Q2?", type: "paragraph" },
+    ];
+    for (const q of questions) {
+      await add_question({ text: q.text, type: q.type });
+      await delay(300);
+      if (q.options) {
+        for (const opt of q.options) {
+          await add_option({ text: opt });
+          await delay(200);
+        }
+      }
+    }
+    return { success: true, questionsAdded: questions.length };
+  `
+})
+```
+
+**When `run_script` is better than individual tools:**
+- Building forms, pages, or documents with multiple sections/items
+- Applying the same operation to many elements (bulk rename, bulk format)
+- Complex workflows with conditional logic between steps
+- When individual tools fail due to focus/timing issues — `run_script` can
+  use DOM APIs directly to work around the problem
+
+### 5.3 Batch Validation (MANDATORY after every batch)
+
+After every `run_script` batch or sequence of 3+ individual tool calls, validate
+that the desired results actually took effect. Do NOT assume success from return
+values alone — verify against the actual DOM/HTML state.
+
+**Validation procedure**:
+
+1. **DOM readback** (preferred): Use `run_script` to read back the state of
+   elements that were just modified. Compare against expected values.
+
+   ```
+   run_script({
+     script: `
+       // After building a form with 3 questions, verify:
+       const questions = document.querySelectorAll('[data-item-id]');
+       const title = document.querySelector('[aria-label="Form title"]')?.value;
+       const optionInputs = document.querySelectorAll('input[aria-label="option value"]');
+       const optionValues = [...optionInputs].map(i => i.value);
+       return {
+         questionCount: questions.length,
+         title: title,
+         options: optionValues
+       };
+     `
+   })
+   ```
+
+2. **Accessibility tree** (when DOM selectors are complex): Use `read_page` or
+   the MCP's query tools (e.g., `get_form_info`, `get_site_info`) to check
+   the current state.
+
+3. **Screenshot** (when visual confirmation is needed): Take a screenshot if:
+   - The change is visual-only (theme color, layout, formatting)
+   - DOM readback returns ambiguous results
+   - Multiple operations were batched and you need an overview
+
+**What to validate after common sequences**:
+
+| Sequence | Validation |
+|----------|-----------|
+| Set title/name/text | Read back the element's value — must match |
+| Add N items (questions, options, rows) | Count items — must equal expected N |
+| Delete items | Count items — must have decreased |
+| Set theme/color | Screenshot to confirm visual change |
+| Toggle settings | Read back the toggle state |
+| Multi-step form build | Count all elements + read back text content |
+
+**If validation fails**:
+1. Identify which specific step didn't take effect
+2. Re-execute just that step (not the entire batch)
+3. Re-validate after the fix
+4. If the same step fails twice, fall back to individual tool calls with
+   DOM verification after each one
+
+**Example — build 3 questions then validate**:
+```
+// Step 1: Execute batch
+run_script({ script: `
+  for (const q of questions) {
+    await add_question({ text: q.text, type: q.type });
+    await delay(300);
+    // ... add options
+  }
+  return { added: questions.length };
+`})
+
+// Step 2: Validate (separate call)
+run_script({ script: `
+  const cards = document.querySelectorAll('[data-item-id]');
+  const texts = [...cards].map(c => {
+    const input = c.querySelector('[aria-label="Question"]') ||
+                  c.querySelector('textarea');
+    return input?.value || input?.textContent || '(empty)';
+  });
+  return { count: cards.length, texts };
+`})
+// Compare returned texts against expected question texts
+```
+
+### 5.4 Using Individual MCP Tools
+
+For simple 1-2 step tasks, call MCP tools directly:
+- `set_page_title({ title: "New Title" })`
+- `health_check()`
+
+### 5.5 Handling Tool Failures
+
+If a specific MCP tool fails, **do NOT fall back to the Chrome extension**.
+Instead:
+
+1. **First try**: Use `run_script` to call the same function with custom logic
+2. **Second try**: Use `run_script` with raw DOM manipulation as a workaround
+3. **Last resort**: Report the error and suggest re-learning via `/learn-webapp`
+
+**Never use Chrome extension tools** (computer, read_page, find, screenshot) for
+operations that can go through the MCP's CDP connection. The Chrome extension adds
+an unnecessary intermediary — all browser interaction should flow through the MCP
+server's Puppeteer connection.
+
+### 5.6 Without MCP (no catalogue match)
+
+If no MCP server exists and the user chose raw automation, use browser tools as
+a last resort. But always offer to learn the app first.
 
 ---
 
@@ -562,7 +785,23 @@ If any tool call failed, mark it with an error indicator:
    You can use tools from different MCPs for the same app if they cover different
    capabilities.
 
-8. **Error recovery**: If an MCP tool call fails:
+8. **Authentication handling**: If an MCP tool returns `state_error` with a URL
+   that looks like a login/auth page (contains `/login`, `/auth`, `/signin`,
+   `/oauth`, or is on a different domain than the app), the user's session has
+   likely expired. Handle this gracefully:
+   - Pause execution immediately
+   - Notify the user:
+     ```
+     The app session has expired — the browser was redirected to a login page.
+     Please re-authenticate in the browser window. I'll monitor the page and
+     resume once you're signed in.
+     ```
+   - Monitor the page URL (via `health_check` or direct CDP check) every 5 seconds
+     for up to 2 minutes. Once the URL returns to the app's expected domain, take a
+     screenshot to confirm authenticated state and resume the task from where it paused
+   - If 2 minutes pass, ask the user if they need more time or want to cancel
+
+9. **Error recovery**: If an MCP tool call fails:
    - **Selector not found**: The app's UI may have changed. Report the error and
      offer to re-learn the operation via `/learn-webapp`.
    - **Page not loaded**: Verify the app is open in Chrome and the URL matches.
@@ -573,14 +812,14 @@ If any tool call failed, mark it with an error indicator:
      fails again, report the error.
    - Never retry more than once. After one retry failure, stop and report.
 
-8. **Systematic error tracking & MCP update proposals**: Track errors across the
+10. **Systematic error tracking & MCP update proposals**: Track errors across the
    entire execution of the user's task. After the task completes (or is blocked),
    analyze the error pattern and propose MCP updates if warranted.
 
    **Error tracking**: During execution, maintain a mental log of every tool error:
    ```
    errors: [
-     { tool: "tool_name", error: "error message", category: "selector|timeout|cdp|state" }
+     { tool: "tool_name", error: "error message", category: "selector_not_found|timeout|state_error|unknown" }
    ]
    ```
 

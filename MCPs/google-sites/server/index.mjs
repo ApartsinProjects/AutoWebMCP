@@ -26,13 +26,52 @@ const URL_PATTERN = /sites\.google\.com/;
 const BROWSER_MODE = process.env.BROWSER_MODE || "visible";
 const DATA_MODE = process.env.DATA_MODE || "user";
 
+// --- Helper Injection ---
+
+const _helperSource = Object.entries(commands)
+  .filter(([, v]) => typeof v === "function")
+  .map(([, fn]) => fn.toString())
+  .join("\n");
+
+const _helperInjection = new Function(
+  _helperSource + "\n" +
+  Object.entries(commands)
+    .filter(([, v]) => typeof v === "function")
+    .map(([name]) => `window.${name} = ${name};`)
+    .join("\n") +
+  "\nwindow.__mcpHelpersReady = true;"
+);
+
 // --- Browser Connection ---
 
 let browser = null;
 let page = null;
+const _injectedPages = new WeakSet();
+
+async function _injectHelpers(p) {
+  if (_injectedPages.has(p)) return;
+  await p.evaluate(_helperInjection);
+  await p.evaluateOnNewDocument(_helperInjection);
+  _injectedPages.add(p);
+}
 
 async function getPage() {
-  if (page && !page.isClosed()) return page;
+  // Re-validate cached page: must still be open AND on the target app
+  if (page && !page.isClosed()) {
+    try {
+      const url = page.url();
+      if (URL_PATTERN.test(url)) return page;
+    } catch { /* page reference is stale */ }
+    page = null;
+  }
+  // Search all open tabs for one matching the target app
+  if (browser) {
+    try {
+      const pages = await browser.pages();
+      page = pages.find(p => URL_PATTERN.test(p.url()));
+      if (page) { await _injectHelpers(page); return page; }
+    } catch { browser = null; }
+  }
 
   if (BROWSER_MODE === "headless" && DATA_MODE === "sandbox") {
     browser = await puppeteer.launch({
@@ -40,6 +79,7 @@ async function getPage() {
       args: ["--no-sandbox", "--disable-setuid-sandbox"],
     });
     page = await browser.newPage();
+    await _injectHelpers(page);
     await page.goto(TARGET_URL, { waitUntil: "networkidle2" });
   } else if (BROWSER_MODE === "headless" && DATA_MODE === "user") {
     const userDataDir = process.env.CHROME_USER_DATA_DIR;
@@ -55,6 +95,7 @@ async function getPage() {
       args: ["--no-sandbox"],
     });
     page = await browser.newPage();
+    await _injectHelpers(page);
     await page.goto(TARGET_URL, { waitUntil: "networkidle2" });
   } else if (BROWSER_MODE === "visible" && DATA_MODE === "sandbox") {
     browser = await puppeteer.launch({
@@ -62,6 +103,7 @@ async function getPage() {
       args: ["--no-sandbox"],
     });
     page = await browser.newPage();
+    await _injectHelpers(page);
     await page.goto(TARGET_URL, { waitUntil: "networkidle2" });
   } else {
     // Visible + User (default): connect to user's running Chrome via CDP
@@ -69,9 +111,9 @@ async function getPage() {
     const cdpUrl = process.env.CHROME_CDP_URL || "http://127.0.0.1:9222";
 
     if (wsEndpoint) {
-      browser = await puppeteer.connect({ browserWSEndpoint: wsEndpoint });
+      browser = await puppeteer.connect({ browserWSEndpoint: wsEndpoint, protocolTimeout: 120_000 });
     } else {
-      browser = await puppeteer.connect({ browserURL: cdpUrl });
+      browser = await puppeteer.connect({ browserURL: cdpUrl, protocolTimeout: 120_000 });
     }
 
     const pages = await browser.pages();
@@ -81,32 +123,49 @@ async function getPage() {
       page = await browser.newPage();
       await page.goto(TARGET_URL, { waitUntil: "networkidle2" });
     }
+    await _injectHelpers(page);
   }
 
   return page;
 }
 
 // --- Command Execution Helper ---
-// Dynamically injects ALL exported functions from commands.mjs into the browser
-// context via page.evaluate(). This ensures every helper function (utility or
-// app-specific) is available to every tool — no hardcoded list to maintain.
 
-const _helperSource = Object.entries(commands)
-  .filter(([, v]) => typeof v === "function")
-  .map(([, fn]) => fn.toString())
-  .join("\n");
-
-async function exec(fnBody, params = {}) {
+async function exec(fn, params = {}) {
   try {
     const p = await getPage();
-    const result = await p.evaluate(
+    const currentUrl = p.url();
+    if (!URL_PATTERN.test(currentUrl)) {
+      return {
+        content: [{ type: "text", text: JSON.stringify({
+          success: false,
+          error: `Not on a ${APP_NAME} page. Current URL: ${currentUrl}`,
+          category: "state_error",
+          hint: `Navigate to ${TARGET_URL} first`,
+        }) }],
+        isError: true,
+      };
+    }
+    let result = await p.evaluate(
       new Function("params", `
-        ${_helperSource}
-        ${fnBody.toString().replace(/^async function \w+/, 'async function fn')}
+        ${fn.toString().replace(/^async function \w+/, 'async function fn')}
         return fn(params);
       `),
       params
     );
+    // Support trusted click: commands can return __clickCoords to request a
+    // puppeteer-level mouse click (needed for widgets that check isTrusted).
+    if (result && result.__clickCoords) {
+      const { x, y } = result.__clickCoords;
+      await p.mouse.click(x, y);
+      await new Promise(r => setTimeout(r, 500));
+      // Re-evaluate for final result if a follow-up function was provided
+      if (result.__followUp) {
+        result = await p.evaluate(new Function(`return (${result.__followUp})()`));
+      } else {
+        delete result.__clickCoords;
+      }
+    }
     return {
       content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
     };
@@ -117,7 +176,8 @@ async function exec(fnBody, params = {}) {
         error: error.message,
         category: error.message.includes("not found") ? "selector_not_found"
           : error.message.includes("timeout") ? "timeout"
-          : "cdp_error"
+          : error.message.includes("precondition") || error.message.includes("not visible") ? "state_error"
+          : "unknown"
       }) }],
       isError: true,
     };
@@ -173,7 +233,7 @@ server.tool(
   async () => {
     const fs = await import("fs");
     const src = fs.readFileSync(new URL("./commands.mjs", import.meta.url), "utf-8");
-    const fns = [...src.matchAll(/export\s+async\s+function\s+(\w+)\s*\(([^)]*)\)\s*\{/g)];
+    const fns = [...src.matchAll(/export\s+(?:async\s+)?function\s+(\w+)\s*\(([^)]*)\)\s*\{/g)];
     const descriptions = [...src.matchAll(/\/\*\*\s*\n\s*\*\s*(.+?)\n/g)];
     const result = fns.map((m, i) => ({
       name: m[1],
@@ -426,6 +486,44 @@ server.tool(
   "Get current site info: title, site name, page title, save status, URL",
   {},
   async () => exec(commands.get_site_info)
+);
+
+// =============================================================================
+// RUN SCRIPT — Execute arbitrary JavaScript in the page context
+// =============================================================================
+
+server.tool(
+  "run_script",
+  "Execute arbitrary JavaScript in the target app's page context. All learned helper functions are available. Use for batch operations or when specific tools fail.",
+  {
+    script: z.string().describe("JavaScript code to execute in the page. Runs inside an async IIFE. Use `return` to send back results. All command helpers are pre-injected."),
+  },
+  async ({ script }) => {
+    try {
+      const p = await getPage();
+      const currentUrl = p.url();
+      if (!URL_PATTERN.test(currentUrl)) {
+        return {
+          content: [{ type: "text", text: JSON.stringify({
+            success: false,
+            error: `Not on a ${APP_NAME} page. Current URL: ${currentUrl}`,
+          }) }],
+          isError: true,
+        };
+      }
+      const result = await p.evaluate(
+        new Function(`return (async () => { ${script} })();`)
+      );
+      return {
+        content: [{ type: "text", text: JSON.stringify(result ?? { success: true }, null, 2) }],
+      };
+    } catch (error) {
+      return {
+        content: [{ type: "text", text: JSON.stringify({ success: false, error: error.message }) }],
+        isError: true,
+      };
+    }
+  }
 );
 
 // --- Start Server ---

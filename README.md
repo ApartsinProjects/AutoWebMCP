@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="docs/banner.svg" alt="AutoWebMCP — Teach Claude a web app once. Use it forever." width="100%"/>
+
 # AutoWebMCP
 
 ### Teach Claude a web app once. Use it forever.
@@ -51,9 +53,14 @@ BEFORE (computer use / raw browser automation):
   7. screenshot() to confirm                 ~2s
                                     Total: ~12s, may fail
 
-AFTER (AutoWebMCP → MCP tool call):
+AFTER (AutoWebMCP → single MCP tool):
   1. set_page_title("My New Title")          ~0.5s
                                     Total: ~0.5s, reliable
+
+AFTER (AutoWebMCP → batch via run_script):
+  1. run_script("set title, add 5 pages,     ~1s  (one CDP round-trip
+     insert content, set theme")                    for ALL operations)
+                                    Total: ~1s, instant
 ```
 
 ---
@@ -180,6 +187,11 @@ When you learn an app, AutoWebMCP creates a complete MCP server. For example, le
 Each tool executes JavaScript directly via Chrome DevTools Protocol — replacing
 the screenshot-analyze-click loop of [computer use](https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool)
 with a single function call.
+
+Every generated MCP server also includes:
+- **`run_script`** — Execute arbitrary JS in the page context for batch operations or when specific tools fail. All helper functions are auto-injected.
+- **`health_check`** — Verify connectivity to the target app
+- **`show_scripts`** — List all available functions and their signatures
 
 ---
 

@@ -31,6 +31,26 @@ Set these variables at the start:
 
 All output goes under: `<PROJECT_ROOT>/MCPs/<APP_NAME>/`
 
+### Status Communication
+
+**MANDATORY**: Keep the user informed of progress throughout every phase. Before each
+major action, print a short status line describing what you're about to do. Examples:
+
+- `Checking CDP connectivity on port 9222...`
+- `Detecting Chrome installation path...`
+- `Chrome found at: C:/Program Files (x86)/Google/Chrome/Application/chrome.exe`
+- `Killing Chrome processes and relaunching with CDP...`
+- `CDP is live — Chrome 145.0.7632.160`
+- `Navigating to https://docs.google.com/forms/u/0/...`
+- `Phase 2: Taking accessibility tree snapshot of the page...`
+- `Exploring element: "Create new form" button (ref_12)...`
+- `Found modal dialog — cataloging 8 new interactive elements...`
+- `Phase 4: Inferring operations from 23 explorations...`
+- `Generating commands.mjs with 15 learned operations...`
+
+Never run more than 2-3 tool calls without printing a status update. The user should
+always know what phase you're in and what's happening.
+
 ---
 
 ## Phase 0: Ensure Chrome CDP is Available
@@ -77,13 +97,43 @@ need to sign into their apps once in this profile. After that, credentials persi
 
 #### Find Chrome
 
+**MANDATORY**: You MUST detect Chrome's actual path before attempting to launch it.
+Never hardcode a single path — Chrome installs vary across machines.
+
 ```bash
-# Windows — check common locations:
-#   "C:\Program Files\Google\Chrome\Application\chrome.exe"
-#   "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"
-#   "%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe"
-# Use: where chrome 2>nul || ls "/c/Program Files/Google/Chrome/Application/chrome.exe" 2>/dev/null || ls "/c/Program Files (x86)/Google/Chrome/Application/chrome.exe" 2>/dev/null
+# Windows (bash) — detect Chrome path in priority order:
+# NOTE: $LOCALAPPDATA works in Claude Code's bash (it inherits Windows env vars).
+# Convert backslashes to forward slashes for path operations.
+WIN_APPLOCAL="$(echo "$LOCALAPPDATA" | sed 's/\\\\/\\//g')"
+CHROME_PATH=""
+for p in \
+  "$WIN_APPLOCAL/Google/Chrome/Application/chrome.exe" \
+  "/c/Program Files/Google/Chrome/Application/chrome.exe" \
+  "/c/Program Files (x86)/Google/Chrome/Application/chrome.exe"; do
+  if [ -f "$p" ]; then CHROME_PATH="$p"; break; fi
+done
+# Fallback: check Windows registry
+if [ -z "$CHROME_PATH" ]; then
+  CHROME_PATH=$(reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe" //ve 2>/dev/null | grep -oP 'REG_SZ\s+\K.*')
+fi
+echo "Chrome found at: $CHROME_PATH"
 ```
+
+```bash
+# macOS — Chrome is typically at:
+CHROME_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+
+# Linux — use which:
+CHROME_PATH=$(which google-chrome || which chromium-browser || which chromium)
+```
+
+If Chrome is not found at any location, inform the user:
+```
+Chrome was not found at any of the standard installation paths.
+Please provide the path to your Chrome executable.
+```
+
+Store the detected path in `CHROME_PATH` and use it in all subsequent launch commands.
 
 #### Kill existing Chrome (if running)
 
@@ -114,6 +164,20 @@ pkill -f chrome
 
 Wait 2 seconds after killing before launching.
 
+**Suppress "Restore pages" popup**: After force-killing Chrome, the profile's
+`Preferences` file records `exit_type: Crashed`, causing a restore prompt on next
+launch. Fix this before relaunching:
+
+```bash
+# Fix Preferences to prevent "Restore pages" popup (do this for whichever
+# CDP_PROFILE_DIR will be used — user profile or sandbox)
+PREFS_FILE="$CDP_PROFILE_DIR/Default/Preferences"
+if [ -f "$PREFS_FILE" ]; then
+  sed -i 's/"exit_type":"Crashed"/"exit_type":"Normal"/g' "$PREFS_FILE"
+  sed -i 's/"exited_cleanly":false/"exited_cleanly":true/g' "$PREFS_FILE"
+fi
+```
+
 #### Launch based on user's mode choice
 
 **Option (a) — User profile (dedicated CDP directory):**
@@ -122,20 +186,29 @@ Wait 2 seconds after killing before launching.
 # Create the CDP profile directory if it doesn't exist
 mkdir -p "<CDP_PROFILE_DIR>"
 
-# Windows
-start "" "<path-to-chrome>" --remote-debugging-port=9222 --user-data-dir="<CDP_PROFILE_DIR>" --no-first-run --no-default-browser-check --disable-session-crashed-bubble "<TARGET_URL>"
+# Windows — IMPORTANT: Do NOT use `start ""` in Git Bash — it triggers MSYS2
+# path conversion which mangles --user-data-dir (e.g., /Google/Chrome/... becomes
+# C:/Program Files/Git/Google/Chrome/...). Use direct execution with `&` instead.
+"$CHROME_PATH" --remote-debugging-port=9222 --user-data-dir="$CDP_PROFILE_DIR" --no-first-run --no-default-browser-check --disable-session-crashed-bubble --hide-crash-restore-bubble --noerrdialogs "<TARGET_URL>" &
 
 # macOS
-open -a "Google Chrome" --args --remote-debugging-port=9222 --user-data-dir="<CDP_PROFILE_DIR>" --no-first-run --no-default-browser-check --disable-session-crashed-bubble "<TARGET_URL>"
+"$CHROME_PATH" --remote-debugging-port=9222 --user-data-dir="$CDP_PROFILE_DIR" --no-first-run --no-default-browser-check --disable-session-crashed-bubble --hide-crash-restore-bubble --noerrdialogs "<TARGET_URL>" &
 
 # Linux
-google-chrome --remote-debugging-port=9222 --user-data-dir="<CDP_PROFILE_DIR>" --no-first-run --no-default-browser-check --disable-session-crashed-bubble "<TARGET_URL>" &
+"$CHROME_PATH" --remote-debugging-port=9222 --user-data-dir="$CDP_PROFILE_DIR" --no-first-run --no-default-browser-check --disable-session-crashed-bubble --hide-crash-restore-bubble --noerrdialogs "<TARGET_URL>" &
 ```
 
-Where `<CDP_PROFILE_DIR>` is:
-- Windows: `C:/Users/<username>/AppData/Local/Google/Chrome/CDP-Profile`
-- macOS: `~/Library/Application Support/Google/Chrome/CDP-Profile`
-- Linux: `~/.config/google-chrome/CDP-Profile`
+Detect `<CDP_PROFILE_DIR>` based on platform:
+```bash
+# Windows (bash) — use $LOCALAPPDATA (inherited from Windows) with backslash conversion
+CDP_PROFILE_DIR="$(echo "$LOCALAPPDATA" | sed 's/\\\\/\\//g')/Google/Chrome/CDP-Profile"
+
+# macOS
+CDP_PROFILE_DIR="$HOME/Library/Application Support/Google/Chrome/CDP-Profile"
+
+# Linux
+CDP_PROFILE_DIR="$HOME/.config/google-chrome/CDP-Profile"
+```
 
 **First-time notice**: If this is a new CDP profile (empty directory), inform the user:
 ```
@@ -147,14 +220,16 @@ your credentials will persist in this profile for future sessions.
 **Option (b) — Sandbox:**
 
 ```bash
-# Windows
-start "" "<path-to-chrome>" --remote-debugging-port=9222 --user-data-dir="%TEMP%/chrome-sandbox-%RANDOM%" --no-first-run --no-default-browser-check --disable-session-crashed-bubble "<TARGET_URL>"
+# Windows — use $TEMP (or fallback to /tmp) for sandbox directory.
+# Do NOT use `start ""` — MSYS2 path conversion mangles --user-data-dir.
+SANDBOX_DIR="${TEMP:-/tmp}/chrome-sandbox-$$"
+"$CHROME_PATH" --remote-debugging-port=9222 --user-data-dir="$SANDBOX_DIR" --no-first-run --no-default-browser-check --disable-session-crashed-bubble --hide-crash-restore-bubble --noerrdialogs "<TARGET_URL>" &
 
 # macOS
-open -a "Google Chrome" --args --remote-debugging-port=9222 --user-data-dir="/tmp/chrome-sandbox-$$" --no-first-run --no-default-browser-check
+"$CHROME_PATH" --remote-debugging-port=9222 --user-data-dir="/tmp/chrome-sandbox-$$" --no-first-run --no-default-browser-check &
 
 # Linux
-google-chrome --remote-debugging-port=9222 --user-data-dir="/tmp/chrome-sandbox-$$" --no-first-run --no-default-browser-check &
+"$CHROME_PATH" --remote-debugging-port=9222 --user-data-dir="/tmp/chrome-sandbox-$$" --no-first-run --no-default-browser-check &
 ```
 
 After launching, wait 3 seconds, then re-test the CDP endpoint. If it still
@@ -165,8 +240,49 @@ fails, inform the user and stop.
 Store the user's choice for later use in Phase 5 (Code Generation) and Phase 6
 (`.mcp.json` registration):
 
-- **Option (a)**: `DATA_MODE=user`
-- **Option (b)**: `DATA_MODE=sandbox`
+- **Option (a)**: `BROWSER_MODE=visible`, `DATA_MODE=user`
+- **Option (b)**: `BROWSER_MODE=visible`, `DATA_MODE=sandbox`
+
+These values are used when registering MCP servers in `.mcp.json` (Phase 6.3).
+
+### 0.5 Connection Health Probing
+
+**MANDATORY**: Before every major phase (exploration, code generation, validation, test
+task), probe the CDP connection to detect early loss of browser connectivity. Do NOT
+attempt long operations without confirming the browser is reachable.
+
+**Health check procedure**:
+```bash
+curl -s --max-time 3 http://127.0.0.1:9222/json/version
+```
+
+If this fails (timeout, connection refused, or empty response):
+1. **Stop immediately** — do NOT attempt further CDP operations
+2. Inform the user:
+   ```
+   Lost connection to Chrome (CDP port 9222 is not responding).
+   This usually means Chrome was closed or crashed.
+
+   Would you like me to relaunch Chrome with CDP?
+   ```
+3. If yes, follow the Phase 0.3 launch procedure (kill, fix Preferences, relaunch)
+4. After relaunch, re-verify connectivity before resuming
+
+**During long operations** (Phase 3 exploration, Phase 6.1 validation, Phase 6.1.2
+test task): if any browser tool call returns "Target closed", "Session closed",
+"Protocol error", or times out:
+1. Stop the current operation
+2. Run the health check above
+3. If CDP is still alive but the page/tab is gone, re-navigate to the app
+4. If CDP is dead, follow the relaunch procedure
+5. Resume from the last successful step, not from the beginning
+
+**Error signatures to watch for**:
+- `"Target closed"` — the Chrome tab was closed
+- `"Session closed"` — the CDP session expired
+- `"Protocol error"` — CDP connection corrupted
+- `"Navigation timeout"` — page load hung (usually network issue, not CDP)
+- `ETIMEDOUT` / `ECONNREFUSED` — Chrome process is gone
 
 ---
 
@@ -242,8 +358,18 @@ MCPs/<APP_NAME>/
 
 ### 2.1 Structural Analysis
 
-1. Use `read_page` (with `filter: "all"`) to get the full accessibility tree. Save the output.
-2. Use `read_page` (with `filter: "interactive"`) to get all interactive elements. Save the output.
+1. Use `read_page` (with `filter: "interactive"`) to get all interactive elements first.
+   This is typically smaller and more useful than the full tree.
+2. Use `read_page` (with `filter: "all"`) to get the full accessibility tree.
+   - **If the tree exceeds ~300 elements**: Do NOT try to process it all at once.
+     Instead, use `read_page` with `ref_id` to read specific regions one at a time
+     (e.g., read the navigation bar, then the main content area, then the sidebar).
+   - **Skip hidden/collapsed content**: Elements inside inactive tabs, collapsed
+     accordions, or hidden panels will appear in the full tree but are not yet
+     relevant. Note their existence but don't catalog them until their parent
+     region is expanded during exploration.
+   - **Use `depth` parameter**: If output is still too large, limit depth to 8-10
+     and drill into specific subtrees as needed.
 3. Take a screenshot for visual reference.
 
 ### 2.2 Region Identification
@@ -281,6 +407,59 @@ For each interactive element found in step 2.1, record:
 }
 ```
 
+### 2.3.1 Duplicate Element Detection
+
+During element cataloging, detect when multiple DOM elements match the same selector.
+This commonly occurs in card-based UIs (e.g., Google Forms has one set of controls per
+question card, but only the active card's controls are visible).
+
+**Procedure**:
+1. For each interactive element's primary selector, run `querySelectorAll` and count matches
+2. If count > 1, flag the element entry with `"duplicateCount": N`
+3. Record whether visibility filtering is needed:
+   ```json
+   {
+     "ref": "ref_X",
+     "selector": "[aria-label=\"Delete question\"]",
+     "duplicateCount": 5,
+     "visibilityFiltered": true,
+     "note": "5 matching elements — only the active card's is visible"
+   }
+   ```
+4. During code generation (Phase 5), elements flagged with `visibilityFiltered: true`
+   must use `queryVisibleSelector()` instead of `querySelector()` to target the
+   active/visible instance
+
+### 2.3.2 ARIA Role and Label Probing
+
+For each interactive element, explicitly check for the presence of semantic attributes.
+This determines the selector strategy used during code generation and directly affects
+tool confidence scores.
+
+**Procedure**:
+1. **Check `role` attribute**: Record the element's ARIA role (or lack thereof)
+2. **Check `aria-label`**: Record the aria-label value (or lack thereof)
+3. **Check `data-tooltip` / `data-testid`**: Record any data attributes useful as selectors
+4. **Classify selector availability**:
+   - **Semantic** (high resilience): Element has `aria-label`, `data-testid`, or unique `role`
+   - **Structural** (medium resilience): Element is findable by tag + parent role/structure
+   - **Text-only** (low resilience): Element has no semantic attributes and can only be
+     matched by visible text content (use `findElementByText()` or `findButtonByText()`)
+
+Record the classification in the element catalog:
+```json
+{
+  "ref": "ref_X",
+  "selectorClass": "semantic|structural|text-only",
+  "bestSelector": "[aria-label=\"Add question\"]",
+  "fallbackSelectors": ["[data-tooltip=\"Add question\"]"],
+  "note": "text-only elements lower tool confidence by 0.10"
+}
+```
+
+Elements classified as "text-only" should receive a confidence penalty of -0.10 in
+Phase 4 operation inference, since text content is the least stable selector strategy.
+
 ### 2.4 Save Reconnaissance Data
 
 Write the region map and element catalog to `exploration/log.json` as the initial exploration state:
@@ -296,6 +475,62 @@ Write the region map and element catalog to `exploration/log.json` as the initia
   "inferredOperations": []
 }
 ```
+
+---
+
+## Phase 2.5: Overlay & Onboarding Dismissal
+
+**Goal**: Clear any overlays, modals, onboarding tours, cookie banners, or promotional
+dialogs that block access to the application's main UI.
+
+Many web apps show first-time overlays (AI assistants, feature tours, cookie consent,
+promotional modals, "What's new" dialogs) that block the main UI. These MUST be
+dismissed before structured exploration can begin.
+
+### 2.5.1 Detect Overlays
+
+After the initial screenshot and reconnaissance, check for blocking overlays:
+
+1. Look for elements with `[role="dialog"]`, `[role="alertdialog"]`, or common overlay
+   patterns (`[class*="modal"]`, `[class*="overlay"]`, `[class*="onboarding"]`,
+   `[class*="tour"]`, `[class*="welcome"]`, `[class*="banner"]`)
+2. Check if the main content area is visually obscured (overlay z-index covering it)
+3. Look for cookie consent banners (`[class*="cookie"]`, `[class*="consent"]`,
+   `[class*="gdpr"]`, `#onetrust-banner-sdk`, `.cc-window`)
+
+### 2.5.2 Dismiss Strategy
+
+For each detected overlay, try dismissal in this priority order:
+
+1. **Close/Dismiss button**: Look for `[aria-label="Close"]`, `[aria-label="Dismiss"]`,
+   buttons with text "Close", "Dismiss", "Skip", "Not now", "Maybe later", "Got it",
+   "No thanks", "X" icon buttons
+2. **Cookie banners**: Click "Reject all", "Decline", or the most privacy-preserving
+   option. If only "Accept" is available, click it to proceed
+3. **Escape key**: Press Escape — many modals close on Escape
+4. **Click outside**: Click on the backdrop/overlay area behind the modal
+
+After each dismissal attempt, take a screenshot to verify the overlay is gone.
+If new overlays appear (chained onboarding steps), continue dismissing until the
+main UI is fully accessible.
+
+### 2.5.3 Record Overlay Handling
+
+Log dismissed overlays in `exploration/log.json` under a new `overlays` array:
+```json
+{
+  "overlays": [
+    {
+      "type": "onboarding|cookie|promo|ai-assistant|tour",
+      "description": "Gemini AI assistant welcome dialog",
+      "dismissMethod": "clicked Close button",
+      "selector": "[aria-label=\"Close\"]"
+    }
+  ]
+}
+```
+
+This data helps when re-learning or validating — the same overlays may reappear.
 
 ---
 
@@ -327,13 +562,68 @@ For each element to explore:
    - Read the page snapshot (`read_page`) focusing on the region around the element
    - Note the current URL
 
-2. **Execute interaction**:
+2. **Danger-zone check** (BEFORE clicking):
+   Classify the element's risk level based on its label, role, and context:
+
+   - **SKIP (never click during exploration)**:
+     - Publish, Send, Submit, Post, Share, Pay, Purchase, Checkout buttons
+     - "Delete all", "Empty trash", "Clear data" (bulk destructive)
+     - External OAuth triggers, "Connect account", "Link service"
+   - **SAFE (click freely)**:
+     - Tabs, menus, dropdowns, expand/collapse, navigation links
+     - Undo, redo, preview, view/read-only actions
+     - Theme/color/display settings
+   - **CAUTIOUS (click but immediately undo/dismiss)**:
+     - Single-item delete, duplicate, add, create (reversible)
+     - Settings toggles (can be toggled back)
+     - Form field changes (don't submit)
+
+   For SKIP elements: Record them in the exploration log with
+   `"skippedReason": "dangerous action — <label>"`. They will be included
+   as inferred operations in Phase 4 based on their label and surrounding
+   context, without needing to be clicked.
+
+   For CAUTIOUS elements: After clicking, immediately undo or dismiss the
+   result. If a confirmation dialog appears, click Cancel/Dismiss.
+
+3. **Execute interaction**:
    - For buttons/links: `computer` tool with `left_click` on the element (use `ref` or coordinates)
    - For inputs: `form_input` to set a test value, or `computer` with `type`
    - For dropdowns: Click to open, read options, click an option
    - For menus: Hover or click to expand, catalog sub-items
 
-3. **Post-state capture**:
+   **3b. Trusted click detection (isTrusted)**:
+   After clicking via JavaScript (step 3), inspect the post-state for evidence
+   that the click was ignored. Symptoms of an `isTrusted` requirement:
+   - No DOM changes despite clicking a clearly interactive element
+   - Console shows "event.isTrusted is false" or similar security messages
+   - Element has visual feedback (hover state) but JS click produces no effect
+
+   **When suspected**:
+   1. Re-attempt the same click using the `computer` tool (which performs a
+      browser-level CDP click with `isTrusted=true`)
+   2. Compare results: if the CDP click succeeds where JS click failed, flag
+      this element as requiring trusted clicks
+   3. Record in the exploration entry:
+      ```json
+      {
+        "requiresTrustedClick": true,
+        "trustedClickEvidence": "JS click produced no DOM change; CDP click opened the menu"
+      }
+      ```
+   4. During code generation (Phase 5), elements flagged with `requiresTrustedClick`
+      must use the `__clickCoords` return pattern instead of `el.click()`:
+      ```javascript
+      const rect = el.getBoundingClientRect();
+      return {
+        success: true,
+        __clickCoords: { x: Math.round(rect.x + rect.width/2), y: Math.round(rect.y + rect.height/2) }
+      };
+      ```
+      The MCP server's `exec()` function intercepts `__clickCoords` and performs
+      a puppeteer-level `page.mouse.click(x, y)` which the browser treats as trusted.
+
+4. **Post-state capture**:
    - Take a screenshot immediately after the interaction
    - Read the page snapshot again
    - Check for:
@@ -344,7 +634,7 @@ For each element to explore:
      - **Network requests** (use `read_network_requests` to check for API calls)
      - **Console messages** (use `read_console_messages` for errors or logs)
 
-4. **Record observation**:
+5. **Record observation**:
    Add to the `explorations` array in `log.json`:
    ```json
    {
@@ -367,10 +657,39 @@ For each element to explore:
    }
    ```
 
-5. **Reset state**:
+6. **Reset state**:
    - If the interaction opened a modal/dialog, close it (press Escape or click close button)
    - If the interaction navigated away, navigate back to `TARGET_URL`
    - Verify the page is back to a known state before the next exploration
+
+### Widget Interaction Pattern Classification
+
+After exploring a set of elements, classify each by its interaction pattern.
+This classification guides code generation in Phase 5 — each pattern maps to a
+specific code template.
+
+| Pattern | Description | Code Pattern |
+|---------|-------------|--------------|
+| **direct-click** | Single JS click produces the effect | `el.click(); return { success: true }` |
+| **trusted-click** | Requires browser-level click (isTrusted) | `return { __clickCoords: {x, y} }` |
+| **dropdown-option** | Click opens listbox/menu, then click option | `el.click(); await sleep(300); optionEl.click()` |
+| **focus-type** | Focus element, then type via setInputValue | `el.focus(); setInputValue(el, value)` |
+| **contenteditable** | Focus contentEditable div, selectAll, insertText | `setContentEditableValue(el, value)` |
+| **multi-step-cascade** | Click triggers panel/dialog, interact within, confirm | `clickAndWait(trigger, panel); fillFields(); confirmBtn.click()` |
+| **toggle** | Click toggles state; read back aria-checked | `el.click(); return { state: el.getAttribute('aria-checked') }` |
+
+Record the classification for each element in the exploration log:
+```json
+{
+  "elementRef": "ref_X",
+  "interactionPattern": "dropdown-option",
+  "patternNote": "Click opens question type listbox, then click the desired option"
+}
+```
+
+During Phase 5 code generation, use the appropriate code pattern for each element
+based on its classification. The `trusted-click` pattern is especially important —
+these elements MUST use `__clickCoords` or the generated tool will silently fail.
 
 ### Multi-step Workflow Discovery
 
@@ -380,6 +699,62 @@ After exploring individual elements, look for multi-step workflows:
 2. Explore the NEW elements within those states
 3. Trace the full workflow: trigger → fill/interact → confirm/submit → result
 4. Record the complete workflow as a sequence of explorations
+
+### Multi-View App Discovery
+
+Many web apps have multiple distinct views that share a URL pattern but have
+completely different UIs (e.g., a homepage/list view vs an editor/detail view,
+a dashboard vs settings page, an inbox vs a compose view).
+
+**After completing the initial reconnaissance of the landing page:**
+
+1. **Identify view transitions**: Look for actions that navigate to a fundamentally
+   different UI within the same app:
+   - Clicking a list item opens an editor/detail view
+   - Clicking "Create new" opens a creation wizard
+   - Tab/section navigation shows entirely different content
+
+2. **Enumerate views**: Record each distinct view in the exploration log:
+   ```json
+   {
+     "views": [
+       {
+         "id": "homepage",
+         "url": "/forms/u/0/",
+         "description": "List of recent forms with template gallery",
+         "entryAction": "Navigate to base URL"
+       },
+       {
+         "id": "editor",
+         "url": "/forms/d/{id}/edit",
+         "description": "Form editing interface with questions, settings, theme",
+         "entryAction": "Click a form or create new"
+       }
+     ]
+   }
+   ```
+
+3. **Explore each view separately**: Run Phase 2 reconnaissance (regions, elements)
+   for each distinct view. This ensures tools are generated for all views, not just
+   the landing page.
+
+4. **Tag operations by view**: Each inferred operation should record which view it
+   belongs to. This helps generated `commands.mjs` include proper precondition
+   checks (e.g., `if (!isEditor()) return { error: "Not in editor" }`).
+
+### Element Reference Stability
+
+Element references (`ref_X`) from `read_page` become stale when:
+- The page layout changes (window resize, responsive breakpoint)
+- New content loads (AJAX, tab switch, navigation)
+- Modals/overlays appear or disappear
+
+**Rules**:
+- After any action that significantly changes the DOM (tab switch, navigation,
+  modal open/close, window resize), call `read_page` again before using refs
+- Never use refs from a previous view in a different view
+- If an element interaction fails with a ref, re-read the page and retry with
+  a fresh ref
 
 ### Iframe Handling
 
@@ -399,7 +774,7 @@ editors, sandboxed widgets). During reconnaissance:
 4. Record which elements live inside which iframe in the exploration log
 5. Generated `commands.mjs` functions should handle iframe traversal when needed
 
-### Authentication Detection
+### Authentication Detection and Monitoring
 
 Before starting exploration, check if the app requires authentication:
 
@@ -407,12 +782,31 @@ Before starting exploration, check if the app requires authentication:
    - URL changed to a login/OAuth page (different domain or `/login`, `/auth` path)
    - Page contains login form elements (`input[type="password"]`, "Sign in" buttons)
 2. If auth is detected and `DATA_MODE` is `"user"` (default):
-   - Ask the user to log in manually in the browser
-   - Wait for them to confirm they've logged in
-   - Verify by checking the URL matches `TARGET_URL` again
+   - Notify the user clearly:
+     ```
+     The app requires authentication. Please log in to <APP_NAME> in the
+     browser window. I'll monitor the page and continue once you're signed in.
+     ```
+   - **Monitor the browser** — poll the page URL every 5 seconds (up to 2 minutes)
+     to detect when the URL returns to `TARGET_URL` or leaves the login/OAuth path:
+     ```javascript
+     // Check via page.url() or read_page — wait for URL to match TARGET_URL
+     ```
+   - Once the URL matches `TARGET_URL` again, take a screenshot to confirm the
+     authenticated state and notify the user: "Authentication detected. Continuing."
+   - If 2 minutes pass without authentication, ask the user if they need more time
+     or want to cancel
 3. If auth is detected and `DATA_MODE` is `"sandbox"`:
    - Report that the app requires authentication and sandbox mode cannot proceed
    - Suggest switching to `DATA_MODE=user`
+4. **Mid-exploration auth interruption** — if the page URL changes to a login/auth
+   page during exploration (session expired, token refresh), pause exploration
+   immediately and notify the user:
+   ```
+   The app session appears to have expired — the browser redirected to a login page.
+   Please re-authenticate in the browser. I'll resume exploration once you're signed in.
+   ```
+   Monitor the browser as in step 2 above. Resume exploration from where it was paused.
 
 ### Exploration Budget
 
@@ -497,6 +891,37 @@ For each operation, develop the executable JavaScript procedure:
 3. Include waits for async UI updates (`MutationObserver` or polling)
 4. Return structured results
 
+   **Selector Priority Scoring**:
+   When generating fallback selector arrays, order selectors by resilience score
+   (highest first). This ensures the most stable selector is tried first.
+
+   | Score | Selector Type | Example |
+   |-------|---------------|---------|
+   | 5 | `aria-label` | `[aria-label="Add question"]` |
+   | 5 | `data-testid` | `[data-testid="compose-btn"]` |
+   | 4 | `data-tooltip` / `data-action` | `[data-tooltip="Add question"]` |
+   | 3 | `role` + text match | `findElementByText("button", "Add")` |
+   | 3 | `role` + `aria-label` combo | `[role="tab"][aria-label="Settings"]` |
+   | 2 | CSS class (stable) | `.compose-button` |
+   | 1 | Text-only match | `findButtonByText("Insert")` |
+   | 0 | Positional / index | `querySelectorAll('input')[2]` |
+
+   Generated selector arrays MUST be ordered highest-score-first:
+   ```javascript
+   // CORRECT — score-ordered (most resilient first)
+   const btn = querySelector([
+     '[aria-label="Add question"]',   // score 5
+     '[data-tooltip="Add question"]', // score 4
+     'button.add-question',           // score 2
+   ]);
+
+   // WRONG — fragile selector first
+   const btn = querySelector([
+     'button.add-question',           // score 2 — breaks on class rename
+     '[aria-label="Add question"]',   // score 5 — should be first
+   ]);
+   ```
+
 Example procedure function:
 ```javascript
 async function compose_message({ to, subject, body }) {
@@ -540,6 +965,56 @@ For each operation with confidence < 0.9, re-test:
 5. Update confidence score
 
 Add validated operations to `inferredOperations` in `log.json`.
+
+### 4.4.1 App-Specific Helper Extraction
+
+Before presenting tools to the user, identify recurring code patterns across the
+inferred operations and extract them as named helper functions. This reduces code
+duplication and makes maintenance easier.
+
+**Procedure**:
+1. **Scan for repetition**: Review all inferred operation procedures. Look for:
+   - The same selector lookup appearing in 3+ operations
+   - The same multi-step sequence (e.g., "click tab X, wait for panel") repeated
+   - Common scoping patterns (e.g., "find the active card, then query within it")
+
+2. **Extract helpers**: For each repeated pattern, define an exported helper:
+   ```javascript
+   // Example: repeated across 8 operations in Google Forms
+   export function getActiveQuestionCard() {
+     const cards = document.querySelectorAll('[data-item-id]');
+     for (const card of cards) {
+       const textbox = card.querySelector('[aria-label="Question"]');
+       if (textbox && textbox.offsetParent !== null) return card;
+     }
+     return null;
+   }
+
+   // Example: repeated sidebar interaction in Google Sites
+   export function clickSidebarTab(tabName) {
+     const tabs = document.querySelectorAll('[role="tab"]');
+     for (const tab of tabs) {
+       if (tab.textContent.trim() === tabName) { tab.click(); return true; }
+     }
+     return false;
+   }
+   ```
+
+3. **Place helpers in a dedicated section**: In generated `commands.mjs`, place
+   app-specific helpers between the framework utilities and the learned operations:
+   ```
+   // --- Utility Functions (framework) ---
+   // querySelector, waitForElement, queryVisibleSelector, etc.
+
+   // --- App-Specific Helpers (ALL MUST BE EXPORTED) ---
+   // getActiveQuestionCard, isHomepage, isEditor, clickSidebarTab, etc.
+
+   // --- Learned Operations ---
+   // set_form_title, add_question, etc.
+   ```
+
+4. **Refactor operations**: Update operation procedures to call the extracted helpers
+   instead of inlining the repeated code.
 
 ---
 
@@ -599,7 +1074,41 @@ to Phase 5. Never skip this gate or auto-approve.
 
 Read the following template files:
 - `<PROJECT_ROOT>/src/templates/mcp-server-template.mjs`
+- `<PROJECT_ROOT>/src/templates/commands-template.mjs`
 - `<PROJECT_ROOT>/src/templates/package-template.json`
+
+**Template utilities available** (from `commands-template.mjs`):
+
+| Function | Purpose | When to Use |
+|----------|---------|-------------|
+| `querySelector(selectors)` | Try multiple CSS selectors, return first match | Default element lookup |
+| `querySelectorAll(selectors)` | Try multiple selectors, return array | Collecting lists of items |
+| `queryVisibleSelector(selectors)` | Like querySelector but only visible matches | Apps with duplicate controls (per-card buttons) |
+| `querySelectorWithin(root, selectors)` | Scoped querySelector from a root element | Operating within a card/panel/section |
+| `waitForElement(selectors, timeout)` | Wait for element to appear (MutationObserver) | After any click that triggers DOM change |
+| `waitForRemoval(selector, timeout)` | Wait for element to disappear | After closing dialogs/overlays |
+| `setInputValue(el, value)` | Set value on `<input>`/`<textarea>` | Native form inputs |
+| `setContentEditableValue(el, value)` | Set value on contentEditable elements | Rich text fields, titles, descriptions |
+| `sleep(ms)` | Pause execution | Animation timing only (never as sole wait) |
+| `clickByAriaLabel(label)` | Click element by aria-label | Quick click when aria-label is known |
+| `findButtonByText(text)` | Find `<button>` or `[role="button"]` by text | Buttons without aria-labels |
+| `findElementByText(role, text, opts)` | Find element by role + text content | Elements without aria-labels |
+| `clickMenuItem(itemText)` | Click `[role="menuitem"]` by text | Menu interactions |
+| `clickAndWait(clickSel, waitSel, timeout)` | Click then wait for result element | Toolbar button → dialog pattern |
+| `getPageState()` | Return diagnostic page info | Precondition checks, debugging |
+
+**Template built-in MCP tools** (from `mcp-server-template.mjs`):
+- `health_check` — verify browser connectivity
+- `get_page_state` — current URL, active element, open dialogs/menus
+- `show_scripts` — list all functions in commands.mjs
+- `run_script` — execute arbitrary JavaScript in page context
+
+**Template `exec()` enhancements**:
+- `__clickCoords` — commands returning `{ __clickCoords: {x,y} }` trigger trusted
+  browser-level clicks via puppeteer (for widgets checking `isTrusted`)
+- `__followUp` — optional function string to evaluate after a trusted click
+- Single retry with helper re-injection on failure
+- Post-execution URL re-check for in-app navigation
 
 ### 5.2 Generate Command Library
 
@@ -632,7 +1141,11 @@ export function waitForElement(selectors, timeout = 5000) {
 }
 
 export function setInputValue(el, value) {
-  // ... React/Vue compatible value setting
+  el.focus();
+  el.select();
+  document.execCommand('insertText', false, value);
+  el.dispatchEvent(new Event("input", { bubbles: true }));
+  el.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
 // --- App-Specific Helpers (ALL MUST BE EXPORTED) ---
@@ -658,12 +1171,171 @@ export async function operation_name(params) {
 
 Write the actual implementations based on the inferred operations from Phase 4.
 
-**Why everything must be exported**: The `exec()` helper in `index.mjs` uses
-`Object.entries(commands).filter(...)` to collect all function exports at startup
-and builds a single source string that gets injected into every `page.evaluate()`
-call. This means any function — utility or app-specific — is automatically available
-in the browser context without maintaining a hardcoded list. If you forget to export
-a helper, it won't be in the injected source and tools that call it will break.
+#### 5.2.1 Mandatory: waitForElement() over sleep()
+
+**CRITICAL CODE GENERATION RULE**: Generated `commands.mjs` functions MUST use
+`waitForElement()` or `waitForRemoval()` after any click/interaction that triggers
+a DOM change. Using `sleep()` as the primary wait strategy is **FORBIDDEN**.
+
+**Correct pattern** — wait for the expected DOM result:
+```javascript
+export async function add_question({ text }) {
+  const addBtn = querySelector(['[aria-label="Add question"]']);
+  if (!addBtn) return { success: false, error: 'Add question button not found', category: 'selector_not_found' };
+
+  const countBefore = document.querySelectorAll('[data-item-id]').length;
+  addBtn.click();
+
+  // CORRECT — wait for the new question card to appear
+  await waitForElement(['[data-item-id]'], 5000);
+  // Optionally verify count increased
+  const countAfter = document.querySelectorAll('[data-item-id]').length;
+
+  if (text) {
+    const input = await waitForElement(['[aria-label="Question"]'], 3000);
+    input.focus();
+    document.execCommand('selectAll', false, null);
+    document.execCommand('insertText', false, text);
+  }
+
+  return { success: true };
+}
+```
+
+**Wrong pattern** — blind sleep:
+```javascript
+// BAD — fragile timing, breaks on slow connections
+addBtn.click();
+await sleep(500);  // What if the UI hasn't updated yet?
+const input = querySelector(['[aria-label="Question"]']);
+```
+
+**Only acceptable uses of sleep()**:
+- Animation timing where no DOM change is observable (e.g., `sleep(200)` after
+  focus to let a transition complete before typing)
+- Debounce delay before readback verification (e.g., `sleep(300)` before reading
+  back a contenteditable value that the app auto-saves)
+- NEVER more than 500ms, and NEVER as the sole wait strategy after a click
+
+#### 5.2.2 Mandatory: Selector Quality Standards
+
+Generated selectors in `commands.mjs` MUST follow this priority:
+
+1. **`[aria-label="..."]`** — First choice. Most stable, semantic
+2. **`[data-testid="..."]`, `[data-*="..."]`** — Excellent stability
+3. **`#id`** — Good if the app uses stable IDs (not auto-generated)
+4. **`[role="..."]`** — Good for structural elements
+5. **`[role="..."][aria-label="..."]`** — Combined for specificity
+6. **Tag + attribute** (e.g., `button[type="submit"]`) — Acceptable
+7. **Text content match** (via helper like `findButtonByText`) — Acceptable fallback
+8. **CSS class** (e.g., `.some-class`) — LAST RESORT ONLY
+
+**NEVER use app-internal CSS classes as primary selectors**. Classes like
+`.freebirdFormeditorViewHeaderHeader` or `.docs-title-input` are implementation
+details that change without notice. They may only appear as the LAST fallback
+in a selector array, after at least one semantic selector.
+
+**After generating all commands**, perform a self-audit:
+- Search the generated `commands.mjs` for any class-based selectors
+- For each one, check if an `aria-label`, `role`, or `data-*` alternative exists
+- Replace class-based selectors with semantic ones wherever possible
+- If no semantic selector exists, keep the class selector but lower the tool's
+  confidence score by 0.10
+
+**Why everything must be exported**: The `_injectHelpers()` function in `index.mjs`
+uses `Object.entries(commands).filter(...)` to collect all function exports at startup
+and injects them into the page's global scope via CDP once per page. Any function —
+utility or app-specific — is automatically available in the browser context without
+maintaining a hardcoded list. If you forget to export a helper, it won't be in the
+injected source and tools that call it will break.
+
+#### 5.2.3 Multi-View State Guards (for multi-view apps)
+
+If the app was identified as having multiple views during Phase 3 (Multi-View App
+Discovery), generate view-detection helper functions and precondition guards.
+
+**Step 1 — Generate view detection helpers**:
+For each discovered view, generate an exported helper that checks URL pattern or
+DOM structure:
+```javascript
+/**
+ * Check if the current page is on the app's homepage/list view.
+ */
+export function isHomepage() {
+  return /\/forms\/u\/\d+\/?$/.test(window.location.pathname);
+}
+
+/**
+ * Check if the current page is in the editor/detail view.
+ */
+export function isEditor() {
+  return /\/forms\/d\/[^/]+\/edit/.test(window.location.href);
+}
+```
+
+**Step 2 — Add precondition guards to every learned operation**:
+Each operation must check that it's on the correct view before executing:
+```javascript
+export async function set_form_title({ title }) {
+  if (!isEditor()) {
+    return {
+      success: false,
+      error: "Not in form editor",
+      category: "state_error",
+      hint: "Open a form first"
+    };
+  }
+  // ... operation logic
+}
+```
+
+**Step 3 — Tag operations by view in manifest.json**:
+```json
+{ "name": "set_form_title", "view": "editor", "description": "..." }
+```
+
+**When to skip**: If the app has only a single view (no URL-based or DOM-based
+view transitions were observed during exploration), skip this section.
+
+#### 5.2.4 Mandatory Readback Verification
+
+Every set/update operation MUST include readback verification code. After setting
+a value, read the element's actual state and compare it to the intended value.
+This catches silent failures where the function returns `success: true` but the
+DOM didn't actually change.
+
+**For `<input>` / `<textarea>` elements**:
+```javascript
+setInputValue(el, value);
+await sleep(300);  // allow debounce
+const readback = el.value;
+if (readback !== value) {
+  return { success: false, error: `Readback mismatch: expected "${value}", got "${readback}"`, category: "state_error" };
+}
+```
+
+**For contentEditable elements**:
+```javascript
+setContentEditableValue(el, value);
+await sleep(300);
+const readback = el.textContent.trim();
+if (readback !== value) {
+  return { success: false, error: `Readback mismatch: expected "${value}", got "${readback}"`, category: "state_error" };
+}
+```
+
+**For toggle elements**:
+```javascript
+el.click();
+await sleep(300);
+const state = el.getAttribute('aria-checked') === 'true';
+return { success: true, state };  // return actual state, not assumed state
+```
+
+**Auto-generation rule**: During code generation, for every function that takes a
+value parameter and sets it on a DOM element, automatically insert readback code
+after the set operation. Do not rely on the operation returning `{ success: true }`
+without verifying the DOM actually changed.
 
 ### 5.3 Generate MCP Server
 
@@ -701,10 +1373,19 @@ Every generated MCP server MUST support two independent mode switches via enviro
 | headless | sandbox | CI/testing — fully isolated, no credentials, no UI |
 
 The generated `index.mjs` should read these from `process.env` and implement the
-corresponding `getPage()` connection logic. If a previously generated MCP server
-exists under `<PROJECT_ROOT>/MCPs/` (e.g., from a different app), use it as a
-reference implementation for the connection logic pattern. Otherwise, use the
-template at `<PROJECT_ROOT>/src/templates/mcp-server-template.mjs`.
+corresponding `getPage()` connection logic.
+
+**IMPORTANT — Template Self-Sufficiency**: Always use the template at
+`<PROJECT_ROOT>/src/templates/mcp-server-template.mjs` as the authoritative
+source for the server structure. The template is complete and self-contained —
+it includes `getPage()` with re-validation and inject-once helper loading via
+`_injectHelpers()` + `evaluateOnNewDocument`, `exec()` helper, `health_check`,
+`show_scripts`, `run_script`, `protocolTimeout: 120_000` on connect calls, and
+the tool registration pattern.
+Do NOT reference or copy patterns from previously generated MCP servers under
+`MCPs/`. Each new MCP server should be generated purely from templates + learned
+operations. This ensures consistency and prevents copying bugs or app-specific
+patterns from one MCP to another.
 
 #### 5.3.2 ShowScripts Tool (Mandatory)
 
@@ -716,10 +1397,10 @@ Add this tool registration to `index.mjs` (it does NOT use `page.evaluate` — i
 the local file system):
 
 ```javascript
-server.tool("show_scripts", "List all JavaScript functions used by this MCP server", {}, async () => {
+server.tool("show_scripts", "List all JavaScript functions used by this MCP server with their names, parameters, and descriptions", {}, async () => {
   const fs = await import('fs');
   const src = fs.readFileSync(new URL('./commands.mjs', import.meta.url), 'utf-8');
-  const fns = [...src.matchAll(/export\s+async\s+function\s+(\w+)\s*\(([^)]*)\)\s*\{/g)];
+  const fns = [...src.matchAll(/export\s+(?:async\s+)?function\s+(\w+)\s*\(([^)]*)\)\s*\{/g)];
   const descriptions = [...src.matchAll(/\/\*\*\s*\n\s*\*\s*(.+?)\n/g)];
   const result = fns.map((m, i) => ({
     name: m[1],
@@ -735,37 +1416,59 @@ operation, enabling inspection, debugging, and trust.
 
 #### 5.3.3 Dynamic Helper Injection (Mandatory)
 
-The `exec()` function in `index.mjs` MUST dynamically inject ALL exported functions
-from `commands.mjs` into the browser context. This prevents the bug where a helper
-function is defined in `commands.mjs` but not available inside `page.evaluate()`.
+The MCP server MUST dynamically inject ALL exported functions from `commands.mjs`
+into the browser context. This prevents the bug where a helper function is defined
+in `commands.mjs` but not available inside `page.evaluate()`.
 
-**Pattern** (already in the template — do NOT use a hardcoded function list):
+**Inject-in-getPage pattern** (already in the template — do NOT use a hardcoded
+function list, do NOT check/re-inject on every `exec()` or `run_script` call):
 
 ```javascript
-// Build helper source ONCE at startup — collects ALL exports automatically
+// Build injection payload ONCE at startup
 const _helperSource = Object.entries(commands)
   .filter(([, v]) => typeof v === "function")
   .map(([, fn]) => fn.toString())
   .join("\n");
 
-async function exec(fn, params = {}) {
-  const p = await getPage();
-  const result = await p.evaluate(
-    new Function("params", `
-      ${_helperSource}
-      ${fn.toString().replace(/^async function \\w+/, "async function fn")}
-      return fn(params);
-    `),
-    params
-  );
-  return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+// Pre-compile the injection function — declares all helpers locally,
+// then assigns each to window.* for global access.
+const _helperInjection = new Function(
+  _helperSource + "\n" +
+  Object.entries(commands)
+    .filter(([, v]) => typeof v === "function")
+    .map(([name]) => `window.${name} = ${name};`)
+    .join("\n") +
+  "\nwindow.__mcpHelpersReady = true;"
+);
+
+const _injectedPages = new WeakSet();
+
+async function _injectHelpers(p) {
+  if (_injectedPages.has(p)) return;
+  // Inject into current document (CDP Runtime.callFunctionOn — bypasses CSP)
+  await p.evaluate(_helperInjection);
+  // Auto-re-inject on future navigations (CDP Page.addScriptToEvaluateOnNewDocument)
+  await p.evaluateOnNewDocument(_helperInjection);
+  _injectedPages.add(p);
 }
 ```
 
-**Why this matters**: When you add a new helper (e.g., `clickSidebarTab`,
-`findButtonByText`), it's automatically included in every tool's browser context.
-No need to update a list in `index.mjs`. The only requirement is that the helper
-is `export`ed from `commands.mjs`.
+Injection happens inside `getPage()` — NOT in `exec()` or `run_script`. Once
+`_injectHelpers(page)` runs for a page, helpers are globally available for the
+lifetime of that tab, automatically surviving navigations via `evaluateOnNewDocument`.
+
+**Why this approach**:
+- **Zero per-call overhead** — no check, no re-injection on each tool call
+- **Survives navigation** — `evaluateOnNewDocument` auto-runs on page loads
+- **Bypasses Trusted Types CSP** — uses CDP protocol methods
+  (`Runtime.callFunctionOn` and `Page.addScriptToEvaluateOnNewDocument`),
+  NOT DOM manipulation (`addScriptTag` is blocked by CSP on Google, GitHub, etc.)
+- **WeakSet tracking** — if the page object is garbage-collected and a new one
+  found, injection runs again automatically
+
+**Why export matters**: When you add a new helper (e.g., `clickSidebarTab`,
+`findButtonByText`), it's automatically included in the injection payload. The
+only requirement is that the helper is `export`ed from `commands.mjs`.
 
 **NEVER** hardcode function names like this (anti-pattern):
 ```javascript
@@ -788,6 +1491,16 @@ Create `MCPs/<APP_NAME>/server/manifest.json`:
     "name": "<APP_NAME>",
     "url": "<TARGET_URL>",
     "urlPattern": "<regex pattern matching the app>"
+  },
+  "modes": {
+    "browser": {
+      "visible": "Attach to user's running Chrome via CDP (default)",
+      "headless": "Launch a headless browser instance"
+    },
+    "data": {
+      "user": "Use user's Chrome profile with credentials (default)",
+      "sandbox": "Use a clean browser profile with no stored data"
+    }
   },
   "operations": [
     {
@@ -841,10 +1554,10 @@ replacing raw browser automation.
      --remote-debugging-port=9222 \
      --user-data-dir="$HOME/chrome-cdp-profile"
 
-   # Windows
+   # Windows (in cmd.exe — or use Git Bash with cmd.exe expansion, see Phase 0.3)
    "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe" ^
      --remote-debugging-port=9222 ^
-     --user-data-dir="%LOCALAPPDATA%\Google\Chrome\CDP-Profile"
+     --user-data-dir="C:\Users\<username>\AppData\Local\Google\Chrome\CDP-Profile"
 
    # Linux
    google-chrome --remote-debugging-port=9222 \
@@ -899,11 +1612,185 @@ The tools table should list ALL tools including `health_check` and `show_scripts
 
 ## Phase 6: Validation & Publication
 
-### 6.1 Install and Test
+### 6.1 Install, Test, and Validate Each Tool
 
 1. `cd` into the generated server directory
 2. Run `npm install` to install dependencies
 3. Verify the server has no syntax errors: `node --check index.mjs`
+4. Verify commands have no syntax errors: `node --check commands.mjs`
+
+#### 6.1.1 Per-Tool Live Validation (Mandatory)
+
+**MANDATORY**: After syntax checks pass, validate each generated tool against
+the live application in the browser. This catches selector mismatches, timing
+issues, and logic errors that syntax checking cannot detect.
+
+**Connection health check**: Before starting validation, run the CDP health
+probe (Phase 0.5). If the browser is unreachable, relaunch before proceeding.
+
+**Procedure**:
+1. Navigate to the app in the browser (it should still be open from exploration)
+2. For each tool, execute its corresponding `commands.mjs` function via the browser:
+   - Use `javascript_tool` or `computer` to run the function
+   - For mutation tools (set_title, add_question, etc.): execute, verify the
+     result, then undo the change
+   - For query tools (get_info, list_items, etc.): execute and verify the
+     returned data matches what's visible
+   - For navigation tools (navigate_tab, preview, etc.): execute and verify
+     the view changes, then navigate back
+3. **DOM Verification (MANDATORY for every tool)**:
+   After executing each tool, verify the actual DOM/HTML state — do NOT trust
+   only the function's return value. The function may return `{ success: true }`
+   while the DOM is unchanged (e.g., `setInputValue` returning success but the
+   input still showing the old value).
+
+   **Verification methods** (in priority order):
+   - **Read DOM directly**: Use `javascript_tool` to read the element's actual
+     `value`, `textContent`, `innerHTML`, or attributes after the tool runs.
+     Compare against expected state.
+   - **Accessibility tree**: Use `read_page` to get the updated tree and verify
+     the expected change appears (new elements, changed text, removed items).
+   - **Screenshot** (if DOM readback is ambiguous): Take a screenshot and
+     visually confirm the change. Use this for visual-only changes (color,
+     layout, theme) where DOM readback isn't definitive.
+
+   **Verification checklist per tool type**:
+   - **Input/set tools** (set_title, set_text, etc.): Read back the element's
+     `value` or `textContent` — it MUST match the value that was set
+   - **Add/insert tools** (add_question, insert_text, etc.): Count elements
+     before and after — count MUST increase by 1. Read back the new element's
+     content to verify it matches.
+   - **Delete/remove tools**: Count elements before and after — count MUST
+     decrease. Verify the specific element is gone.
+   - **Toggle tools**: Read the toggle's `checked`/`aria-checked`/class state
+     before and after — it MUST flip.
+   - **Navigation tools**: Check `window.location` or page content changed
+   - **Query tools**: Cross-check returned data against visible page content
+
+   **If verification fails**: The tool has a bug. Do NOT mark it as PASS.
+   Diagnose the issue (wrong selector, timing, input method) and fix it in
+   `commands.mjs`. Common fixes:
+   - `setInputValue` not working → switch to `execCommand('insertText')` pattern
+   - Element not found after click → add `waitForElement()` before accessing it
+   - Wrong element targeted → scope to the active/focused container (e.g.,
+     `getActiveQuestionCard()` instead of searching the whole document)
+
+4. Record results for each tool:
+   - **PASS**: Tool executed successfully AND DOM verification confirmed the change
+   - **FAIL**: Tool returned an error, or DOM verification showed the change
+     didn't actually happen — fix the selectors or logic in `commands.mjs` and
+     re-validate
+   - **SKIP**: Tool cannot be safely validated without side effects (e.g.,
+     publish, send, delete without undo)
+
+5. **Minimum validation threshold**: At least 70% of tools must PASS validation.
+   If fewer than 70% pass, fix the failing tools before proceeding.
+
+6. Update each tool's confidence score based on validation results:
+   - PASS + semantic selectors → confidence 0.85-0.95
+   - PASS + class-based selectors → confidence 0.70-0.80
+   - SKIP (inferred but untested) → confidence 0.65-0.75
+   - FAIL then fixed → confidence 0.75-0.85
+
+**Time budget**: Aim to validate each tool in 1-2 browser interactions. For a
+30-tool server, this should take ~30-60 tool calls total.
+
+**Sequence testing**: After individual tool validation, test tools in common
+sequences (e.g., add_question → set_question_text → add_option → add_option).
+Some tools work individually but break when chained due to focus/state issues.
+Test at least 2-3 common sequences before proceeding.
+
+#### Automated Validation Scaffolding
+
+After all tools are individually validated and sequence-tested, generate a
+`_validate_all()` function in `commands.mjs` that automates smoke testing:
+
+```javascript
+export async function _validate_all() {
+  const results = [];
+  // 1. Call each query tool (get_*, list_*) and verify non-error response
+  // 2. Call each mutation tool with minimal params + immediate undo
+  //    (e.g., set_page_title("__test__") → set_page_title(originalTitle))
+  // 3. Skip tools marked dangerous or irreversible in manifest
+  // 4. Return { passed: [...], failed: [...], skipped: [...] }
+  return { total: results.length, results };
+}
+```
+
+Rules for generated validation:
+- **Query tools**: Call with no args or safe defaults, expect `success: true`
+- **Mutation tools**: Capture current state → mutate → verify → restore original
+- **Skip list**: Tools that create permanent side effects (e.g., `publish_site`,
+  `delete_page`) are skipped and listed in the report
+- **Output**: Return pass/fail summary; export for use via `run_script`
+
+This function is NOT registered as an MCP tool — it's an internal diagnostic
+callable through `run_script` for regression testing after app updates.
+
+### 6.1.2 End-to-End Test Task (Mandatory)
+
+After per-tool validation, create a **test task** that exercises the MCP server as a
+whole — a realistic multi-step scenario that chains multiple tools together.
+
+#### Create the test task file
+
+Write a Markdown file at `MCPs/<APP_NAME>/test-task.md` describing a concrete task
+that a user would perform with the application. The task should:
+
+- Exercise at least 5-8 different tools in a logical workflow
+- Include both query tools (get info, list items) and mutation tools (create, edit, set)
+- Include at least one undo/navigation step
+- Specify the exact expected outcome so success is objectively verifiable
+
+**Example** (for a Google Forms MCP):
+```markdown
+# Test Task: Create a Feedback Form
+
+## Steps
+1. Create a new blank form
+2. Set the form title to "Test Feedback Form"
+3. Set the description to "Automated test — delete after verification"
+4. Add a multiple choice question "How was your experience?" with options: Great, OK, Poor
+5. Add a paragraph question "Any additional comments?"
+6. Toggle the first question as required
+7. Set the theme color to Blue
+8. Get form info and verify: title matches, question count is 3 (default + 2 added)
+9. Undo the theme color change
+10. Get form info again to confirm
+
+## Expected Outcome
+- Form exists with title "Test Feedback Form"
+- 3 questions total (1 default + 2 added)
+- First added question is multiple choice, required, with 3 options
+- Second added question is paragraph type
+- Theme color is back to default (after undo)
+```
+
+#### Run the debug cycle
+
+1. **Execute the test task** using the MCP server's tools (call them via `exec()` or
+   the MCP tool calls if the server is already registered)
+2. **If any tool fails**:
+   - Diagnose the failure (selector not found, timing issue, wrong logic)
+   - Fix the corresponding function in `commands.mjs`
+   - Re-run the failing step and continue
+3. **Repeat** until the entire test task completes successfully end-to-end
+4. **Update confidence scores** based on test results — tools that worked on first
+   try get higher confidence than tools that needed fixes
+5. **Record the test result** at the bottom of `test-task.md`:
+   ```markdown
+   ## Test Result
+   - Date: <ISO date>
+   - Status: PASS / FAIL
+   - Tools exercised: N
+   - Fixes applied: list of functions fixed and what was wrong
+   - Total debug cycles: N
+   ```
+
+**Important**: Do not skip this phase. The per-tool validation (6.1.1) catches
+individual tool failures, but the test task catches **integration issues** — tools
+that work alone but fail when chained together (e.g., focus management, state
+transitions, timing between consecutive operations).
 
 ### 6.2 Update Catalogue
 
@@ -954,13 +1841,16 @@ After updating the catalogue, automatically register the MCP server in
          "args": ["MCPs/<APP_NAME>/server/index.mjs"],
          "env": {
            "CHROME_CDP_URL": "http://127.0.0.1:9222",
-           "BROWSER_MODE": "visible",
-           "DATA_MODE": "user"
+           "BROWSER_MODE": "<from Phase 0.4>",
+           "DATA_MODE": "<from Phase 0.4>"
          }
        }
      }
    }
    ```
+
+   Use the `BROWSER_MODE` and `DATA_MODE` values from Phase 0.4 (defaults:
+   `visible` and `user` if Phase 0 was skipped because CDP was already running).
 
    Use **relative paths** in `args` — this keeps `.mcp.json` portable across machines.
    If `.mcp.json` already has other servers, merge the new entry without removing them.
@@ -1018,6 +1908,7 @@ Would you like me to commit and push the new <APP_NAME> MCP server to the repo?
 This will commit:
   - MCPs/<APP_NAME>/          (server code + exploration artifacts)
   - MCPs/<APP_NAME>/README.md (documentation)
+  - MCPs/<APP_NAME>/test-task.md (integration test + results)
   - catalogue.json            (updated app registry)
   - .mcp.json                 (MCP server registration)
 ```
@@ -1070,7 +1961,7 @@ extend the existing MCP server for the current application.
      and the new inferred operation
    - **Update** `<PROJECT_ROOT>/catalogue.json` — bump operationCount in the relevant MCP entry
 
-6. **Report**: Show the user the newly added tool in the same table format as Phase 6.3,
+6. **Report**: Show the user the newly added tool in the same table format as Phase 6.4,
    confirming it was added to the existing server.
 
 ### Example
@@ -1128,12 +2019,40 @@ Only MCP output files may be created or modified during execution:
 - Always include waits after actions that trigger async updates
 - Always handle the case where an element is not found
 - Always reset state between explorations
+- **Never match elements by current value or computed size** — use semantic attributes
+  (`aria-label`, `data-*`, `role`) or structural position instead of fragile heuristics
+  like `inp.value === 'Untitled'` or `inp.offsetWidth > 100`
+- **Sanitize CSS selectors** — when building selectors from dynamic values (e.g.,
+  `[aria-label="${label}"]`), always use `CSS.escape()` to prevent selector injection
+- **MANDATORY: `waitForElement()` over `sleep()`** — After every click that
+  triggers a DOM change, use `waitForElement()` to wait for the expected result.
+  After every dismiss/close, use `waitForRemoval()` to wait for the element to
+  disappear. `sleep()` is ONLY acceptable for animation timing (max 300ms) where
+  no DOM change is observable. The generated `commands.mjs` should have far more
+  `waitForElement()` calls than `sleep()` calls — if `sleep()` appears more
+  frequently, the code quality is insufficient
+- **Verify every parameter is used** — after generating a command function, check that
+  every parameter in the function signature is actually referenced in the body. Remove
+  unused parameters or implement their behavior
+- **Only return `success: true` when the action was confirmed** — never return success
+  on a fallback path that may not have acted. If no button was found and clicked,
+  return `success: false`
 
 ### Quality
 - Aim for descriptive, user-meaningful operation names
 - Include clear descriptions that an LLM can use for tool selection
 - Set realistic confidence scores — don't inflate them
 - Only include operations that pass validation
+- **Readback verification for mutations** — after setting a value (input, text content),
+  read back the element's `value` or `textContent` and compare. If the readback doesn't
+  match the intended value, return `{ success: false, error: "readback mismatch" }`
+- **Pre-condition checks** — operations that act on the currently focused/selected
+  element (e.g., `set_text_content`, `format_text`) must verify an appropriate element
+  is focused/selected before acting. Return a clear error if no editable element is active
+- **Confidence scoring** — weight confidence based on selector quality: operations using
+  `aria-label` or `data-testid` selectors score higher than those using positional or
+  value-based heuristics. Operations with fallback paths that could false-positive should
+  be penalized. Simple, single-selector operations (undo, redo) naturally score highest
 
 ### Error Recovery
 - If an interaction causes an unexpected page state (error page, crash, redirect):
@@ -1170,22 +2089,22 @@ Every generated MCP server should follow these error handling principles:
    decide on the right recovery action:
    - `selector_not_found` — element selectors no longer match the DOM
    - `timeout` — element exists but didn't reach expected state in time
-   - `state_error` — precondition not met (e.g., wrong page, element not visible)
-   - `cdp_error` — Chrome DevTools Protocol connection issue
-   - `unknown` — unexpected error
+   - `state_error` — precondition not met (e.g., wrong page, element not visible, auth redirect)
+   - `unknown` — unexpected or unclassified error
 
-3. **Tool-level error wrapping**: The `index.mjs` server should wrap each tool call
-   in a try/catch that returns the error to Claude rather than crashing:
+3. **Tool-level error wrapping**: The `exec()` helper in `index.mjs` already wraps
+   every tool call in a try/catch that returns errors to Claude rather than crashing.
+   All tool registrations MUST use `exec()` — never call `page.evaluate()` directly:
    ```javascript
+   // CORRECT — uses exec() which handles errors and injects helpers
    server.tool("tool_name", "description", schema, async (params) => {
-     try {
-       const result = await page.evaluate(commands.tool_name, params);
-       return { content: [{ type: "text", text: JSON.stringify(result) }] };
-     } catch (err) {
-       return { content: [{ type: "text", text: JSON.stringify({
-         success: false, error: err.message, category: 'cdp_error'
-       })}] };
-     }
+     return await exec(commands.tool_name, params);
+   });
+
+   // WRONG — bypasses exec(), loses helper injection and error handling
+   server.tool("tool_name", "description", schema, async (params) => {
+     const result = await page.evaluate(commands.tool_name, params);
+     return { content: [{ type: "text", text: JSON.stringify(result) }] };
    });
    ```
 

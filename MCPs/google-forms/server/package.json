@@ -1,0 +1,21 @@
+{
+  "name": "google-forms-mcp",
+  "version": "1.0.0",
+  "description": "Auto-generated MCP server for Google Forms — provides semantic operations for form creation and editing",
+  "type": "module",
+  "main": "index.mjs",
+  "scripts": {
+    "start": "node index.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "puppeteer-core": "^24.6.0",
+    "zod": "^3.24.4"
+  },
+  "autowebmcp": {
+    "targetUrl": "https://docs.google.com/forms/",
+    "urlPattern": "docs\\.google\\.com\\/forms",
+    "generatedAt": "2026-03-09",
+    "frameworkVersion": "0.1.0"
+  }
+}

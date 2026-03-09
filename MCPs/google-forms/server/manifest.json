@@ -1,0 +1,54 @@
+{
+  "name": "google-forms-mcp",
+  "version": "1.1.0",
+  "description": "MCP server providing semantic operations for Google Forms editor",
+  "targetApp": {
+    "name": "Google Forms",
+    "url": "https://docs.google.com/forms/",
+    "urlPattern": "docs\\.google\\.com\\/forms"
+  },
+  "modes": {
+    "browser": {
+      "visible": "Attach to user's running Chrome via CDP (default)",
+      "headless": "Launch a headless browser instance"
+    },
+    "data": {
+      "user": "Use user's Chrome profile with credentials and stored data (default)",
+      "sandbox": "Use a clean browser profile with no stored data"
+    }
+  },
+  "operations": [
+    { "name": "health_check", "description": "Check connectivity to Google Forms", "category": "data_retrieval", "confidence": 0.99 },
+    { "name": "show_scripts", "description": "List all JavaScript functions used by this MCP server", "category": "data_retrieval", "confidence": 0.99 },
+    { "name": "get_form_info", "description": "Get form title, description, URL, question count, save status", "category": "data_retrieval", "confidence": 0.92 },
+    { "name": "list_forms", "description": "List recent forms from the homepage", "category": "data_retrieval", "confidence": 0.90 },
+    { "name": "create_form", "description": "Create a new blank form", "category": "workflow", "confidence": 0.85 },
+    { "name": "create_form_from_template", "description": "Create a form from a named template", "category": "workflow", "confidence": 0.82 },
+    { "name": "open_form", "description": "Open an existing form by name", "category": "workflow", "confidence": 0.88 },
+    { "name": "set_form_title", "description": "Set the form title in the header", "category": "data_entry", "confidence": 0.95 },
+    { "name": "set_form_description", "description": "Set the form description text", "category": "data_entry", "confidence": 0.95 },
+    { "name": "set_document_title", "description": "Set the document name (browser tab/Drive)", "category": "data_entry", "confidence": 0.92 },
+    { "name": "add_question", "description": "Add a new question with optional text and type", "category": "content_editing", "confidence": 0.92 },
+    { "name": "set_question_text", "description": "Set text of the currently focused question", "category": "content_editing", "confidence": 0.90 },
+    { "name": "set_question_type", "description": "Change question type (short answer, multiple choice, etc.)", "category": "content_editing", "confidence": 0.88 },
+    { "name": "add_option", "description": "Add an option to a multiple-choice/checkbox/dropdown question", "category": "content_editing", "confidence": 0.88 },
+    { "name": "toggle_required", "description": "Toggle Required on the focused question", "category": "content_editing", "confidence": 0.92 },
+    { "name": "duplicate_question", "description": "Duplicate the focused question", "category": "content_editing", "confidence": 0.95 },
+    { "name": "delete_question", "description": "Delete the focused question", "category": "content_editing", "confidence": 0.92 },
+    { "name": "add_section", "description": "Add a section divider", "category": "content_editing", "confidence": 0.92 },
+    { "name": "add_title_description", "description": "Add a title and description block", "category": "content_editing", "confidence": 0.92 },
+    { "name": "set_theme_color", "description": "Set the form accent color", "category": "workflow", "confidence": 0.88 },
+    { "name": "set_background_color", "description": "Set the form background color", "category": "workflow", "confidence": 0.85 },
+    { "name": "toggle_quiz_mode", "description": "Toggle Make this a quiz in settings", "category": "workflow", "confidence": 0.92 },
+    { "name": "set_collect_emails", "description": "Set email collection mode", "category": "workflow", "confidence": 0.82 },
+    { "name": "toggle_limit_responses", "description": "Toggle Limit to 1 response", "category": "workflow", "confidence": 0.88 },
+    { "name": "set_confirmation_message", "description": "Set the post-submission confirmation message", "category": "data_entry", "confidence": 0.78 },
+    { "name": "get_response_count", "description": "Get the number of form responses", "category": "data_retrieval", "confidence": 0.80 },
+    { "name": "preview_form", "description": "Open form preview in a new tab", "category": "navigation", "confidence": 0.92 },
+    { "name": "undo", "description": "Undo the last editing action", "category": "navigation", "confidence": 0.95 },
+    { "name": "redo", "description": "Redo the last undone action", "category": "navigation", "confidence": 0.95 },
+    { "name": "navigate_tab", "description": "Switch between Questions, Responses, Settings tabs", "category": "navigation", "confidence": 0.92 }
+  ],
+  "generatedAt": "2026-03-09",
+  "frameworkVersion": "0.1.0"
+}

@@ -1,0 +1,95 @@
+{
+  "appName": "google-forms",
+  "url": "https://docs.google.com/forms/u/0/",
+  "editorUrl": "https://docs.google.com/forms/d/{formId}/edit",
+  "timestamp": "2026-03-09T12:00:00Z",
+  "regions": [
+    {
+      "id": "region-1",
+      "label": "Top Navigation Bar",
+      "type": "navigation",
+      "context": "homepage",
+      "elements": ["search-bar", "main-menu", "google-apps", "account"],
+      "description": "Forms homepage navigation with search, menu, and account controls"
+    },
+    {
+      "id": "region-2",
+      "label": "Template Gallery",
+      "type": "content",
+      "context": "homepage",
+      "elements": ["blank-form", "templates-listbox", "template-gallery-btn"],
+      "description": "Template selection area with Blank form, Customer Feedback, Contact Info, RSVP, and more"
+    },
+    {
+      "id": "region-3",
+      "label": "Recent Forms List",
+      "type": "content",
+      "context": "homepage",
+      "elements": ["forms-listbox", "owner-filter", "sort-options", "list-view", "file-picker"],
+      "description": "List of recent forms with filtering and sorting controls"
+    },
+    {
+      "id": "region-4",
+      "label": "Editor Top Bar",
+      "type": "navigation",
+      "context": "editor",
+      "elements": ["document-title", "star", "move-to-folder", "add-ons", "gemini-create", "customize-theme", "preview", "undo", "redo", "copy-link", "share", "publish", "more"],
+      "description": "Form editor toolbar with title, actions, and publishing controls"
+    },
+    {
+      "id": "region-5",
+      "label": "Editor Tabs",
+      "type": "navigation",
+      "context": "editor",
+      "elements": ["questions-tab", "responses-tab", "settings-tab"],
+      "description": "Main editor tab navigation: Questions, Responses, Settings"
+    },
+    {
+      "id": "region-6",
+      "label": "Form Header Section",
+      "type": "form",
+      "context": "editor-questions",
+      "elements": ["form-title", "form-description", "formatting-toolbar"],
+      "description": "Form title and description with formatting options (bold, italic, underline, link)"
+    },
+    {
+      "id": "region-7",
+      "label": "Question Card",
+      "type": "form",
+      "context": "editor-questions",
+      "elements": ["question-text", "question-type-dropdown", "inline-image", "options-list", "add-option", "add-other", "answer-key", "duplicate", "delete", "required-toggle", "more-options", "description"],
+      "description": "Individual question editing card with all question controls"
+    },
+    {
+      "id": "region-8",
+      "label": "Right Sidebar (Floating Toolbar)",
+      "type": "actions",
+      "context": "editor-questions",
+      "elements": ["add-question", "import-questions", "add-title-description", "add-image", "add-video", "add-section"],
+      "description": "Sidebar with buttons to add new form elements"
+    },
+    {
+      "id": "region-9",
+      "label": "Responses Tab",
+      "type": "content",
+      "context": "editor-responses",
+      "elements": ["response-count", "link-to-sheets", "download-csv", "summary-subtab", "question-subtab", "individual-subtab"],
+      "description": "Responses management with summary, per-question, and individual views"
+    },
+    {
+      "id": "region-10",
+      "label": "Settings Tab",
+      "type": "form",
+      "context": "editor-settings",
+      "elements": ["make-quiz", "release-grades", "collect-emails", "response-copy", "allow-editing", "limit-responses", "progress-bar", "shuffle-questions", "confirmation-message"],
+      "description": "Form settings including quiz mode, response collection, and presentation options"
+    }
+  ],
+  "questionTypes": [
+    "Short answer", "Paragraph", "Multiple choice", "Checkboxes", "Dropdown",
+    "File upload", "Linear scale", "Rating", "Multiple choice grid", "Checkbox grid",
+    "Date", "Time"
+  ],
+  "explorations": [],
+  "inferredOperations": []
+}

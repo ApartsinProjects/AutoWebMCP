@@ -63,6 +63,18 @@ google-sites/
 | `headless` | `user` | Background automation with user credentials |
 | `headless` | `sandbox` | CI/testing — fully isolated |
 
+## Error Handling
+
+Every tool call verifies the browser is on a Google Sites page before executing. If not, returns a `state_error` with the current URL.
+
+All errors return structured responses with:
+- `success`: boolean
+- `error`: error message
+- `category`: one of `selector_not_found`, `timeout`, `state_error`, `unknown`
+- `hint`: optional recovery suggestion
+
+Mutation tools (`set_site_title`, `set_site_name`, `set_page_title`) include readback verification — the value is read back after setting to confirm the change took effect.
+
 ## Usage
 
 Auto-registered in `.mcp.json`. Claude Code loads it automatically when interacting with Google Sites.

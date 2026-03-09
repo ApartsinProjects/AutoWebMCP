@@ -60,14 +60,9 @@ export function waitForRemoval(selector, timeout = 5000) {
 }
 
 export function setInputValue(el, value) {
-  const descriptor =
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value") ||
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value");
-  if (descriptor && descriptor.set) {
-    descriptor.set.call(el, value);
-  } else {
-    el.value = value;
-  }
+  el.focus();
+  el.select();
+  document.execCommand('insertText', false, value);
   el.dispatchEvent(new Event("input", { bubbles: true }));
   el.dispatchEvent(new Event("change", { bubbles: true }));
 }
@@ -77,7 +72,7 @@ export function sleep(ms) {
 }
 
 export function clickByAriaLabel(label) {
-  const el = document.querySelector(`[aria-label="${label}"]`);
+  const el = document.querySelector(`[aria-label="${CSS.escape(label)}"]`);
   if (!el) return false;
   el.click();
   return true;
@@ -123,20 +118,23 @@ export function clickMenuItem(itemText) {
  * Set the site title shown in the browser tab and top bar
  */
 export async function set_site_title({ title }) {
-  // The top bar site name is an input without aria-label; find it by current value or position
-  const inputs = document.querySelectorAll('input[type="text"]');
-  let input = null;
-  for (const inp of inputs) {
-    // The site title input is in the top bar, not inside the editor canvas
-    if (inp.closest('[role="banner"]') || inp.closest('header') || !inp.getAttribute('aria-label')) {
-      if (inp.value === 'Untitled site' || inp.offsetWidth > 100) {
+  // Find the site title input in the top bar using structural/semantic selectors
+  let input = querySelector([
+    '[role="banner"] input[type="text"]',
+    'header input[type="text"]',
+  ]);
+  // Fallback: find a top-level text input not inside the editor canvas
+  if (!input) {
+    const inputs = document.querySelectorAll('input[type="text"]');
+    for (const inp of inputs) {
+      // Skip inputs that have aria-labels (these are likely named fields like "Site name")
+      // and inputs inside the editor canvas
+      if (!inp.getAttribute('aria-label') && !inp.closest('[role="main"]') && !inp.closest('[contenteditable]')) {
         input = inp;
         break;
       }
     }
   }
-  // Fallback: first text input that's not the site name field
-  if (!input) input = inputs[0];
   if (!input) return { success: false, error: "Site title input not found" };
   input.focus();
   input.select();
@@ -144,6 +142,11 @@ export async function set_site_title({ title }) {
   input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
   input.blur();
   await sleep(500);
+  // Readback verification
+  const actual = input.value;
+  if (actual !== title) {
+    return { success: false, error: `Title readback mismatch: expected "${title}", got "${actual}"` };
+  }
   return { success: true, title };
 }
 
@@ -161,6 +164,11 @@ export async function set_site_name({ name }) {
   setInputValue(input, name);
   input.blur();
   await sleep(500);
+  // Readback verification
+  const actual = input.value;
+  if (actual !== name) {
+    return { success: false, error: `Site name readback mismatch: expected "${name}", got "${actual}"` };
+  }
   return { success: true, name };
 }
 
@@ -180,13 +188,21 @@ export async function set_page_title({ title }) {
   if (!titleEl) titleEl = textboxes[0];
   if (!titleEl) return { success: false, error: "Page title element not found" };
 
+  // Google Sites requires a double-click to enter edit mode on text elements
   titleEl.click();
-  await sleep(300);
+  await sleep(200);
+  titleEl.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+  await sleep(400);
   titleEl.focus();
   await sleep(200);
   document.execCommand("selectAll", false, null);
   document.execCommand("insertText", false, title);
   await sleep(300);
+  // Readback verification
+  const actual = titleEl.textContent.trim();
+  if (actual !== title) {
+    return { success: false, error: `Page title readback mismatch: expected "${title}", got "${actual}"` };
+  }
   return { success: true, title };
 }
 
@@ -198,7 +214,7 @@ export async function set_page_title({ title }) {
 export async function insert_text_box({ text, style }) {
   // Ensure Insert tab is active
   clickSidebarTab("Insert");
-  await sleep(300);
+  await waitForElement(['[role="tabpanel"]'], 3000).catch(() => null);
 
   const textBoxBtn = querySelector([
     '[data-tooltip="Text box"]',
@@ -212,20 +228,55 @@ export async function insert_text_box({ text, style }) {
   } else {
     textBoxBtn.click();
   }
-  await sleep(800);
+  // Wait for the new text box to appear in the editor
+  await waitForElement(['[role="textbox"][aria-label="Text"]'], 5000).catch(() => null);
+  await sleep(300);
+
+  if (style && style !== "normal") {
+    // Apply paragraph style before typing text
+    const styleDropdown = querySelector([
+      '[aria-label="Styles"]',
+      'select[aria-label="Styles"]',
+      '[role="listbox"][aria-label="Styles"]',
+    ]);
+    if (styleDropdown) {
+      styleDropdown.click();
+      await sleep(400);
+      const styleMap = { heading: "Heading", subheading: "Subheading", title: "Title" };
+      const styleName = styleMap[style.toLowerCase()] || style;
+      const options = document.querySelectorAll('[role="option"]');
+      for (const opt of options) {
+        if (opt.textContent.toLowerCase().includes(styleName.toLowerCase())) {
+          opt.click();
+          await sleep(300);
+          break;
+        }
+      }
+    }
+  }
 
   if (text) {
     document.execCommand("insertText", false, text);
     await sleep(300);
   }
 
-  return { success: true, message: "Text box inserted", text };
+  return { success: true, message: "Text box inserted", text, style: style || "normal" };
 }
 
 /**
  * Replace the content of the currently selected/focused text element
  */
 export async function set_text_content({ text }) {
+  // Pre-condition: verify an editable element is focused
+  const active = document.activeElement;
+  const isEditable = active && (
+    active.isContentEditable ||
+    active.tagName === "TEXTAREA" ||
+    (active.tagName === "INPUT" && active.type === "text")
+  );
+  if (!isEditable) {
+    return { success: false, error: "No editable element is focused. Click a text element first." };
+  }
   document.execCommand("selectAll", false, null);
   document.execCommand("insertText", false, text);
   await sleep(300);
@@ -281,7 +332,9 @@ export async function insert_link({ url }) {
   ]);
   if (!linkBtn) return { success: false, error: "Insert link button not found. Select text first." };
   linkBtn.click();
-  await sleep(600);
+  // Wait for the link dialog to appear
+  await waitForElement(['input[aria-label="Link"]', 'input[placeholder*="link"]', 'input[placeholder*="URL"]'], 5000).catch(() => null);
+  await sleep(200);
 
   // Find the URL input in the link dialog
   const urlInput = querySelector([
@@ -311,12 +364,14 @@ export async function insert_link({ url }) {
  */
 export async function insert_button({ name, link }) {
   clickSidebarTab("Insert");
-  await sleep(300);
+  await waitForElement(['[role="tabpanel"]'], 3000).catch(() => null);
 
   if (!clickMenuItem("Button")) {
     return { success: false, error: "Button menu item not found" };
   }
-  await sleep(800);
+  // Wait for the button config dialog to appear
+  await waitForElement(['input[aria-label="Name"]', 'input[placeholder="Name"]'], 5000).catch(() => null);
+  await sleep(300);
 
   // Fill Name field
   const nameInput = querySelector([
@@ -354,11 +409,11 @@ export async function insert_button({ name, link }) {
  */
 export async function insert_divider() {
   clickSidebarTab("Insert");
-  await sleep(300);
+  await waitForElement(['[role="tabpanel"]'], 3000).catch(() => null);
   if (!clickMenuItem("Divider")) {
     return { success: false, error: "Divider button not found" };
   }
-  await sleep(500);
+  await sleep(300);
   return { success: true, element: "divider" };
 }
 
@@ -367,11 +422,11 @@ export async function insert_divider() {
  */
 export async function insert_spacer() {
   clickSidebarTab("Insert");
-  await sleep(300);
+  await waitForElement(['[role="tabpanel"]'], 3000).catch(() => null);
   if (!clickMenuItem("Spacer")) {
     return { success: false, error: "Spacer button not found" };
   }
-  await sleep(500);
+  await sleep(300);
   return { success: true, element: "spacer" };
 }
 
@@ -380,12 +435,14 @@ export async function insert_spacer() {
  */
 export async function insert_embed({ url, embedCode }) {
   clickSidebarTab("Insert");
-  await sleep(300);
+  await waitForElement(['[role="tabpanel"]'], 3000).catch(() => null);
 
   if (!clickMenuItem("Embed")) {
     return { success: false, error: "Embed button not found" };
   }
-  await sleep(800);
+  // Wait for embed dialog
+  await waitForElement(['input[placeholder*="URL"]', 'input[aria-label*="URL"]', '[role="dialog"]'], 5000).catch(() => null);
+  await sleep(300);
 
   if (embedCode) {
     // Switch to Embed code tab
@@ -428,7 +485,7 @@ export async function insert_embed({ url, embedCode }) {
  */
 export async function insert_image() {
   clickSidebarTab("Insert");
-  await sleep(300);
+  await waitForElement(['[role="tabpanel"]'], 3000).catch(() => null);
 
   const btn = querySelector([
     '[data-tooltip="Images"]',
@@ -450,11 +507,11 @@ export async function insert_image() {
  */
 export async function insert_collapsible_group() {
   clickSidebarTab("Insert");
-  await sleep(300);
+  await waitForElement(['[role="tabpanel"]'], 3000).catch(() => null);
   if (!clickMenuItem("Collapsible group")) {
     return { success: false, error: "Collapsible group button not found" };
   }
-  await sleep(500);
+  await sleep(300);
   return { success: true, element: "collapsible_group" };
 }
 
@@ -463,11 +520,11 @@ export async function insert_collapsible_group() {
  */
 export async function insert_table_of_contents() {
   clickSidebarTab("Insert");
-  await sleep(300);
+  await waitForElement(['[role="tabpanel"]'], 3000).catch(() => null);
   if (!clickMenuItem("Table of contents")) {
     return { success: false, error: "Table of contents button not found" };
   }
-  await sleep(500);
+  await sleep(300);
   return { success: true, element: "table_of_contents" };
 }
 
@@ -476,11 +533,11 @@ export async function insert_table_of_contents() {
  */
 export async function insert_image_carousel() {
   clickSidebarTab("Insert");
-  await sleep(300);
+  await waitForElement(['[role="tabpanel"]'], 3000).catch(() => null);
   if (!clickMenuItem("Image carousel")) {
     return { success: false, error: "Image carousel button not found" };
   }
-  await sleep(500);
+  await sleep(300);
   return { success: true, message: "Image carousel inserted — add images via the carousel editor" };
 }
 
@@ -491,7 +548,7 @@ export async function insert_image_carousel() {
  */
 export async function add_page({ name }) {
   clickSidebarTab("Pages");
-  await sleep(500);
+  await waitForElement(['[role="tabpanel"]'], 3000).catch(() => null);
 
   // Click the + (New page) FAB button
   const newPageBtn = querySelector([
@@ -533,15 +590,16 @@ export async function add_page({ name }) {
  */
 export async function list_pages() {
   clickSidebarTab("Pages");
-  await sleep(500);
+  await waitForElement(['[role="treeitem"]'], 3000).catch(() => null);
 
-  const pageItems = querySelectorAll([
-    '[role="treeitem"]',
-    '.asa1zb',
-  ]);
-  const pages = pageItems.map((item) => ({
-    name: item.textContent.trim(),
-  }));
+  const pageItems = document.querySelectorAll('[role="treeitem"]');
+  const pages = [];
+  for (const item of pageItems) {
+    // Page name lives in an input[aria-label="Page title"] inside each treeitem
+    const titleInput = item.querySelector('input[aria-label="Page title"]') || item.querySelector('input[type="text"]');
+    const name = titleInput ? titleInput.value : item.textContent.trim();
+    pages.push({ name: name || "untitled" });
+  }
   return { success: true, pages };
 }
 
@@ -558,29 +616,19 @@ export async function set_header_type({ type }) {
   if (headerSection) headerSection.click();
   await sleep(300);
 
-  // Click "Header type" button
-  const headerTypeBtn = querySelector([
-    '[aria-label="Header type"]',
-    '[data-tooltip="Header type"]',
-  ]);
+  // Click "Header type" button (has role="button" but no aria-label — find by text)
+  const headerTypeBtn = findButtonByText("Header type")
+    || [...document.querySelectorAll('[role="button"]')].find(b => b.textContent.trim() === 'Header type' && b.offsetParent !== null);
   if (!headerTypeBtn) return { success: false, error: "Header type button not found. Click on the header first." };
   headerTypeBtn.click();
   await sleep(400);
 
-  // Find and click the matching type option
-  const options = document.querySelectorAll('[role="option"], [role="radio"], [role="menuitemradio"]');
-  for (const opt of options) {
-    if (opt.textContent.toLowerCase().includes(type.toLowerCase())) {
-      opt.click();
-      await sleep(500);
-      return { success: true, type };
-    }
-  }
-  // Fallback: look for buttons/items with the type name
-  const allElements = document.querySelectorAll('button, [role="button"]');
-  for (const el of allElements) {
-    if (el.textContent.trim().toLowerCase() === type.toLowerCase()) {
-      el.click();
+  // Header type options are [role="button"] divs containing a span.IQftMb with the type name
+  const typeButtons = [...document.querySelectorAll('[role="button"]')].filter(b => b.offsetParent !== null);
+  for (const btn of typeButtons) {
+    const text = btn.textContent.trim().toLowerCase();
+    if (text === type.toLowerCase()) {
+      btn.click();
       await sleep(500);
       return { success: true, type };
     }
@@ -645,24 +693,28 @@ export async function set_section_color({ color }) {
   btn.click();
   await sleep(400);
 
-  // Find the color option — colors are typically presented as radio buttons or option tiles
-  const colorOptions = document.querySelectorAll('[role="option"], [role="radio"], [role="menuitemradio"]');
-  for (const opt of colorOptions) {
-    const label = (opt.getAttribute('aria-label') || opt.textContent || '').toLowerCase();
-    if (label.includes(color.toLowerCase())) {
-      opt.click();
-      await sleep(300);
-      return { success: true, color };
+  // Section color options are [role="menuitem"] elements (Style 1, Style 2, Style 3, Image).
+  // They require trusted clicks — return __clickCoords for the MCP server.
+  const menuItems = [...document.querySelectorAll('[role="menuitem"]')].filter(m => m.offsetParent !== null);
+
+  // Map color param to style name: accept "1"/"Style 1", "2"/"Style 2", "3"/"Style 3"
+  const colorLower = color.toLowerCase().trim();
+  const colorMap = { '1': 'style 1', '2': 'style 2', '3': 'style 3', '4': 'image' };
+  const target = colorMap[colorLower] || colorLower;
+
+  for (const item of menuItems) {
+    const text = item.textContent.trim().toLowerCase();
+    if (text === target || text.includes(target)) {
+      const rect = item.getBoundingClientRect();
+      return {
+        success: true,
+        color: item.textContent.trim(),
+        __clickCoords: { x: Math.round(rect.x + rect.width / 2), y: Math.round(rect.y + rect.height / 2) }
+      };
     }
   }
-  // Try clicking by index if color is a number (1-based)
-  const idx = parseInt(color);
-  if (!isNaN(idx) && idx >= 1 && idx <= colorOptions.length) {
-    colorOptions[idx - 1].click();
-    await sleep(300);
-    return { success: true, color: `option ${idx}` };
-  }
-  return { success: false, error: `Color "${color}" not found. Try a number (1-4) or color name.` };
+  const available = menuItems.map(m => m.textContent.trim()).join(', ');
+  return { success: false, error: `Color "${color}" not found. Available: ${available}` };
 }
 
 // --- Theme Operations ---
@@ -674,17 +726,16 @@ export async function set_theme({ theme }) {
   clickSidebarTab("Themes");
   await sleep(500);
 
-  // Find theme by name in the themes list
-  const allElements = document.querySelectorAll('[role="option"], [role="radio"], button');
-  for (const el of allElements) {
-    const text = el.textContent.trim().toLowerCase();
-    if (text === theme.toLowerCase() || text.includes(theme.toLowerCase())) {
-      // Make sure it's in the themes panel, not elsewhere
-      if (el.closest('[role="tabpanel"]') || el.closest('[aria-label*="heme"]')) {
-        el.click();
-        await sleep(1000);
-        return { success: true, theme };
-      }
+  // Theme cards are divs with class .m6xOQ containing a span with the theme name
+  const themeSpans = [...document.querySelectorAll('span')].filter(
+    s => s.offsetParent !== null && s.textContent.trim().toLowerCase() === theme.toLowerCase()
+  );
+  for (const span of themeSpans) {
+    const card = span.closest('.m6xOQ');
+    if (card) {
+      card.click();
+      await sleep(1000);
+      return { success: true, theme };
     }
   }
   return { success: false, error: `Theme "${theme}" not found. Available: Simple, Aristotle, Diplomat, Vision, Level, Impression` };
@@ -697,29 +748,43 @@ export async function set_theme_color({ color }) {
   clickSidebarTab("Themes");
   await sleep(500);
 
-  // Color options appear as small circular buttons under the selected theme
-  // They typically have aria-label describing the color
-  const colorBtns = document.querySelectorAll('[role="radio"], [role="option"]');
-  for (const btn of colorBtns) {
-    const label = (btn.getAttribute('aria-label') || btn.getAttribute('data-tooltip') || '').toLowerCase();
-    if (label.includes(color.toLowerCase())) {
-      btn.click();
-      await sleep(500);
-      return { success: true, color };
+  // Color swatches are [role="radio"] inside a [role="radiogroup"] under the selected theme card.
+  // These radios require trusted (browser-level) clicks — JS .click() doesn't work.
+  // We return __clickCoords so the MCP server uses puppeteer page.mouse.click().
+  const selectedCard = document.querySelector('.m6xOQ.gk6SMd');
+  if (!selectedCard) return { success: false, error: 'No theme is currently selected' };
+
+  const container = selectedCard.parentElement;
+  const rg = container?.querySelector('[role="radiogroup"]');
+  if (!rg) return { success: false, error: 'Color radiogroup not found under selected theme' };
+
+  const radios = [...rg.querySelectorAll('[role="radio"]')];
+
+  // Try by name match
+  for (const radio of radios) {
+    const label = (radio.getAttribute('aria-label') || '').toLowerCase();
+    if (label === color.toLowerCase() || label.includes(color.toLowerCase())) {
+      const rect = radio.getBoundingClientRect();
+      return {
+        success: true,
+        color: radio.getAttribute('aria-label'),
+        __clickCoords: { x: Math.round(rect.x + rect.width / 2), y: Math.round(rect.y + rect.height / 2) }
+      };
     }
   }
-  // Try by index
+  // Try by index (1-based)
   const idx = parseInt(color);
-  if (!isNaN(idx) && idx >= 1) {
-    // Filter to only color option buttons (small circular ones)
-    const colorOptions = Array.from(colorBtns).filter(b => b.offsetWidth < 50 && b.offsetWidth > 10);
-    if (idx <= colorOptions.length) {
-      colorOptions[idx - 1].click();
-      await sleep(500);
-      return { success: true, color: `option ${idx}` };
-    }
+  if (!isNaN(idx) && idx >= 1 && idx <= radios.length) {
+    const radio = radios[idx - 1];
+    const rect = radio.getBoundingClientRect();
+    return {
+      success: true,
+      color: radio.getAttribute('aria-label') || `option ${idx}`,
+      __clickCoords: { x: Math.round(rect.x + rect.width / 2), y: Math.round(rect.y + rect.height / 2) }
+    };
   }
-  return { success: false, error: `Theme color "${color}" not found. Try a number (1-7) or color name.` };
+  const available = radios.map(r => r.getAttribute('aria-label')).filter(Boolean).join(', ');
+  return { success: false, error: `Theme color "${color}" not found. Available: ${available}` };
 }
 
 // --- Editor Navigation Operations ---
@@ -787,8 +852,9 @@ export async function exit_preview() {
   if (closeBtn) {
     closeBtn.click();
     await sleep(500);
+    return { success: true, action: "preview_exited" };
   }
-  return { success: true, action: "preview_exited" };
+  return { success: false, error: "Exit preview button not found. The editor may not be in preview mode." };
 }
 
 // --- Settings & Info Operations ---

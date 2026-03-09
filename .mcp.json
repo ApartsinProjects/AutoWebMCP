@@ -9,6 +9,16 @@
         "BROWSER_MODE": "visible",
         "DATA_MODE": "user"
       }
+    },
+    "google-forms": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["MCPs/google-forms/server/index.mjs"],
+      "env": {
+        "CHROME_CDP_URL": "http://127.0.0.1:9222",
+        "BROWSER_MODE": "visible",
+        "DATA_MODE": "user"
+      }
     }
   }
 }
