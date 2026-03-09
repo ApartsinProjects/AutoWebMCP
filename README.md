@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/banner.jpg" alt="AutoWebMCP — Teach Claude a web app once. Use it forever." width="100%"/>
+<img src="docs/banner.jpg?v=2" alt="AutoWebMCP — Teach Claude a web app once. Use it forever." width="100%"/>
 
 # AutoWebMCP
 
