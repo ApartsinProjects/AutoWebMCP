@@ -11,6 +11,7 @@
 [![MCP](https://img.shields.io/badge/Model_Context_Protocol-MCP-blue)](https://docs.anthropic.com/en/docs/mcp)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-Skills-purple)](https://docs.anthropic.com/en/docs/claude-code)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Release](https://img.shields.io/badge/Release-v0.2.0-orange)](https://github.com/ApartsinProjects/AutoWebMCP/releases)
 
 </div>
 
@@ -86,7 +87,7 @@ cp path/to/AutoWebMCP/src/templates/* src/templates/
 
 ### Option B: Download release
 
-Download `autowebmcp-v0.1.0.zip` from [Releases](https://github.com/ApartsinProjects/AutoWebMCP/releases), extract, and run:
+Download the latest release from [Releases](https://github.com/ApartsinProjects/AutoWebMCP/releases), extract, and run:
 
 ```bash
 ./install.sh /path/to/your/project
@@ -147,7 +148,7 @@ from GitHub automatically — they don't need to learn it again.
 
 ## What Gets Generated
 
-When you learn an app, AutoWebMCP creates a complete MCP server. For example, learning Google Sites produced **33 tools**:
+When you learn an app, AutoWebMCP creates a complete MCP server. So far, we've generated servers for **Google Sites** (33 tools) and **Google Forms** (30 tools). For example:
 
 | Tool | What it does |
 |------|-------------|
@@ -241,7 +242,8 @@ user can use instantly — downloaded from GitHub on first use, no learning requ
 
 ```
 catalogue.json
-├── google-sites    → 33 tools
+├── google-sites    → 33 tools  ✅
+├── google-forms    → 30 tools  ✅
 ├── notion          → 45 tools  (someone contributes this)
 ├── figma           → 60 tools  (someone contributes this)
 ├── salesforce      → 80 tools  (someone contributes this)
@@ -294,3 +296,7 @@ anything — the `/webmcp` skill handles it.
 ## License
 
 MIT
+
+---
+
+<sub>Built by [Sasha Apartsin](https://www.apartsin.com)</sub>

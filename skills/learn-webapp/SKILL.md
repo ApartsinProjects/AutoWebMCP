@@ -460,6 +460,35 @@ Record the classification in the element catalog:
 Elements classified as "text-only" should receive a confidence penalty of -0.10 in
 Phase 4 operation inference, since text content is the least stable selector strategy.
 
+### 2.3.3 Obfuscated DOM Detection
+
+Some web applications (Facebook, Gmail, compiled React/Angular apps) use obfuscated
+or hashed CSS class names that change on every deployment (e.g., `x1lliihq`, `_a9--`).
+These classes are unusable as selectors.
+
+**Detection heuristic**: During element cataloging, check if the majority of elements
+have class names that match obfuscation patterns:
+- Very short (1-8 chars) alphanumeric strings: `x1abc`, `_a9--`
+- Hash-like patterns: `css-1dbjc4n`, `_23df`
+- No human-readable words in class names
+
+**If obfuscated DOM is detected**:
+1. Flag the app as `"obfuscatedDOM": true` in the exploration log
+2. Deprioritize CSS class selectors entirely (score 0 instead of 2)
+3. Rely exclusively on:
+   - `aria-label`, `role`, `data-testid` (semantic selectors)
+   - `findElementByText()` and `findButtonByText()` (text-based matching)
+   - `getRepeatingContainers()` (structural discovery for feed content)
+   - Structural selectors like `[role="main"] > div > div:first-child`
+4. Lower the default confidence for all tools by 0.05 since obfuscated apps
+   are inherently harder to automate reliably
+5. Inform the user:
+   ```
+   This app uses obfuscated CSS classes (e.g., compiled React/Angular output).
+   CSS-based selectors will not be used. Tools will rely on ARIA attributes
+   and text content matching, which may be less precise.
+   ```
+
 ### 2.4 Save Reconnaissance Data
 
 Write the region map and element catalog to `exploration/log.json` as the initial exploration state:
@@ -502,13 +531,18 @@ After the initial screenshot and reconnaissance, check for blocking overlays:
 
 For each detected overlay, try dismissal in this priority order:
 
-1. **Close/Dismiss button**: Look for `[aria-label="Close"]`, `[aria-label="Dismiss"]`,
+1. **AI assistant overlays**: Many Google apps show Gemini/AI welcome dialogs.
+   Look for elements containing "Gemini", "AI", "assistant", "copilot" text
+   within dialogs. These typically have a "Close", "Dismiss", or "Not now" button.
+   Also check for floating AI assistant buttons that may partially obscure the UI
+   (e.g., `[aria-label="Ask Gemini"]` floating widgets).
+2. **Close/Dismiss button**: Look for `[aria-label="Close"]`, `[aria-label="Dismiss"]`,
    buttons with text "Close", "Dismiss", "Skip", "Not now", "Maybe later", "Got it",
    "No thanks", "X" icon buttons
-2. **Cookie banners**: Click "Reject all", "Decline", or the most privacy-preserving
+3. **Cookie banners**: Click "Reject all", "Decline", or the most privacy-preserving
    option. If only "Accept" is available, click it to proceed
-3. **Escape key**: Press Escape — many modals close on Escape
-4. **Click outside**: Click on the backdrop/overlay area behind the modal
+4. **Escape key**: Press Escape — many modals close on Escape
+5. **Click outside**: Click on the backdrop/overlay area behind the modal
 
 After each dismissal attempt, take a screenshot to verify the overlay is gone.
 If new overlays appear (chained onboarding steps), continue dismissing until the
@@ -552,6 +586,11 @@ prominent/important elements first. Use this priority order:
 3. **Navigation** — Menu items, tabs, links to sub-views
 4. **Secondary actions** — Toolbar buttons, context menus, toggles
 5. **Informational** — Tooltips, expandable sections, status indicators
+
+**Parallel exploration**: When the app has multiple independent regions (e.g.,
+toolbar and sidebar), consider using the Agent tool to explore regions in parallel
+when they don't affect each other's state. This can significantly reduce the
+total number of tool calls for complex apps with 30+ interactive elements.
 
 ### Exploration Procedure (for each element)
 
@@ -780,6 +819,10 @@ Before starting exploration, check if the app requires authentication:
 
 1. After navigating to `TARGET_URL`, check for signs of auth redirects:
    - URL changed to a login/OAuth page (different domain or `/login`, `/auth` path)
+   - URL contains auth-related path segments: `/login`, `/signin`, `/auth`,
+     `/accounts`, `/oauth`, `/sso`, `/checkpoint`
+   - URL contains auth-related query params: `?next=`, `?redirect=`, `?return_to=`
+   - Page title contains "Log in", "Sign in", "Verify", "Checkpoint"
    - Page contains login form elements (`input[type="password"]`, "Sign in" buttons)
 2. If auth is detected and `DATA_MODE` is `"user"` (default):
    - Notify the user clearly:
@@ -1057,7 +1100,13 @@ array and re-display the updated table. Ask again.
 explore the app to learn the requested operation, define it, validate it, and add it to
 `inferredOperations`. Then re-display the full updated table. Ask again.
 
-**If the user approves**: Proceed to Phase 5 (Code Generation).
+**If the user approves**: Immediately checkpoint the approved operations before
+proceeding to Phase 5. Write the complete `inferredOperations` array (with all
+procedure definitions) to `exploration/log.json`. This ensures that if the
+session runs out of context during code generation, a future session can resume
+from the checkpoint without re-exploring the app.
+
+Then proceed to Phase 5 (Code Generation).
 
 ### 4.5.3 Loop
 
@@ -1096,6 +1145,12 @@ Read the following template files:
 | `clickMenuItem(itemText)` | Click `[role="menuitem"]` by text | Menu interactions |
 | `clickAndWait(clickSel, waitSel, timeout)` | Click then wait for result element | Toolbar button → dialog pattern |
 | `getPageState()` | Return diagnostic page info | Precondition checks, debugging |
+| `navigateTo(url)` | Navigate via `__navigate` signal | In-app page transitions |
+| `multiStep(steps)` | Sequential click-and-wait steps | Multi-level menu navigation |
+| `getRepeatingContainers(anchor, levels, verify)` | Find feed-style post containers | Feed/card-based apps (Facebook, Reddit) |
+| `menuCascade(itemTexts, delay)` | Navigate cascading menus by text | Settings menus, nested dropdowns |
+| `selectRadioByIndex(group, index)` | Select radio via trusted click | Radio buttons checking `isTrusted` |
+| `togglePanel(trigger, panel, action)` | State-aware panel toggle | Sidebars, settings panels, drawers |
 
 **Template built-in MCP tools** (from `mcp-server-template.mjs`):
 - `health_check` — verify browser connectivity
@@ -1106,7 +1161,13 @@ Read the following template files:
 **Template `exec()` enhancements**:
 - `__clickCoords` — commands returning `{ __clickCoords: {x,y} }` trigger trusted
   browser-level clicks via puppeteer (for widgets checking `isTrusted`)
-- `__followUp` — optional function string to evaluate after a trusted click
+- `__hoverCoords` — commands returning `{ __hoverCoords: {x,y} }` move the mouse
+  to reveal hover-dependent UI (reaction bars, tooltip menus, hover dropdowns)
+- `__keyPress` — commands returning `{ __keyPress: "Enter" }` send keyboard events
+  through puppeteer (search submissions, dialog confirmations, Escape to close)
+- `__navigate` — commands returning `{ __navigate: url }` perform page navigation
+  at the puppeteer level (avoids race condition with `window.location.href`)
+- `__followUp` — optional function string to evaluate after a trusted click/hover/key
 - Single retry with helper re-injection on failure
 - Post-execution URL re-check for in-app navigation
 
@@ -1330,6 +1391,28 @@ el.click();
 await sleep(300);
 const state = el.getAttribute('aria-checked') === 'true';
 return { success: true, state };  // return actual state, not assumed state
+```
+
+**For panel/dialog state**:
+```javascript
+// Verify a panel actually opened after clicking its trigger
+trigger.click();
+await waitForElement(panelSelector, 3000);
+const panel = querySelector(panelSelectors);
+if (!panel || panel.offsetParent === null) {
+  return { success: false, error: 'Panel did not open', category: 'state_error' };
+}
+```
+
+**For dropdown selections**:
+```javascript
+// Verify the selected option after a dropdown interaction
+optionEl.click();
+await sleep(300);
+const selected = el.getAttribute('aria-selected') || el.classList.contains('selected');
+if (!selected) {
+  return { success: false, error: 'Option not selected', category: 'state_error' };
+}
 ```
 
 **Auto-generation rule**: During code generation, for every function that takes a
@@ -1699,6 +1782,19 @@ probe (Phase 0.5). If the browser is unreachable, relaunch before proceeding.
 sequences (e.g., add_question → set_question_text → add_option → add_option).
 Some tools work individually but break when chained due to focus/state issues.
 Test at least 2-3 common sequences before proceeding.
+
+**Selector resilience scoring**: During validation, score each tool's selector
+strategy for resilience. Tools relying on CSS classes as primary selectors should
+receive a 0.10 confidence penalty. Track which tools use only semantic selectors
+(`aria-label`, `data-testid`, `role`) vs class-based or positional selectors.
+Include this breakdown in the validation report so the user can prioritize
+which tools to improve first.
+
+**Cross-session stability testing**: If the app was explored in a previous session
+and is being re-validated (option c in Phase 1), compare the current DOM structure
+against the exploration log from the original session. Flag any selectors that no
+longer match and prioritize fixing those tools. This catches UI changes that
+occurred between learning sessions.
 
 #### Automated Validation Scaffolding
 
@@ -2127,6 +2223,23 @@ Every generated MCP server should follow these error handling principles:
 - Validate & update (option c) tests existing tools and fixes broken ones in-place.
 - Separate MCP (option d) creates a new independent MCP with a distinct name.
 - Always check for an existing MCP before creating a new one (Phase 1 step 3).
+
+### Incremental Code Generation
+
+For large apps with 20+ tools, generate code incrementally to manage context:
+
+1. **Batch by view**: Generate all operations for one view (e.g., homepage) at a time,
+   write to `commands.mjs`, then proceed to the next view (e.g., editor)
+2. **Write-as-you-go**: After generating each batch of 5-8 operations, append them
+   to `commands.mjs` rather than holding all operations in memory
+3. **Checkpoint after approval**: Once the user approves the tool list (Phase 4.5),
+   immediately write the approved operation definitions to `exploration/log.json`
+   as a checkpoint. If context runs out during Phase 5, the next session can resume
+   code generation from the checkpoint without re-exploring
+4. **Template-based scaffolding**: For operations that follow a known interaction
+   pattern (see Widget Interaction Pattern Classification in Phase 3), generate
+   the function body from the pattern template + selectors automatically. Only
+   operations with custom logic need manual procedure development
 
 ### Context Management
 - Save exploration data incrementally (don't hold everything in memory)

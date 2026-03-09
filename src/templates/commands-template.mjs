@@ -336,6 +336,170 @@ export function getPageState() {
   };
 }
 
+// --- Navigation & Compound Action Utilities (ALL MUST BE EXPORTED) ---
+
+/**
+ * Navigate to a URL within the same application.
+ * Returns a __navigate signal that exec() intercepts to perform the navigation
+ * at the puppeteer level, avoiding the race condition of setting
+ * window.location.href inside page.evaluate().
+ *
+ * @param {string} url - The URL to navigate to.
+ * @returns {Object} Navigation signal for exec() to intercept.
+ */
+export function navigateTo(url) {
+  return { __navigate: url };
+}
+
+/**
+ * Execute a sequence of click-and-wait steps in order.
+ * Each step clicks an element and waits for a result element to appear.
+ * Useful for multi-level menu navigation and cascading UI interactions.
+ *
+ * @param {Array<{click: string|string[], wait?: string|string[], delay?: number}>} steps
+ * @returns {Promise<{success: boolean, completedSteps: number, error?: string}>}
+ */
+export async function multiStep(steps) {
+  for (let i = 0; i < steps.length; i++) {
+    const { click, wait, delay } = steps[i];
+    const btn = querySelector(Array.isArray(click) ? click : [click]);
+    if (!btn) return { success: false, error: `Step ${i + 1}: element not found`, completedSteps: i, category: 'selector_not_found' };
+    btn.click();
+    if (delay) await sleep(delay);
+    if (wait) {
+      try {
+        await waitForElement(Array.isArray(wait) ? wait : [wait], 5000);
+      } catch {
+        return { success: false, error: `Step ${i + 1}: wait target not found`, completedSteps: i, category: 'timeout' };
+      }
+    }
+  }
+  return { success: true, completedSteps: steps.length };
+}
+
+// --- Feed / Repeating Content Utilities (ALL MUST BE EXPORTED) ---
+
+/**
+ * Find repeating content containers by walking up from anchor elements.
+ * Used in feed-style apps (Facebook, Twitter, LinkedIn, Reddit) where posts/cards
+ * don't have semantic roles but can be identified by common action buttons.
+ *
+ * Example: getRepeatingContainers('[aria-label="Like"]', 12, '[aria-label="Actions for this post"]')
+ *
+ * @param {string} anchorSelector - CSS selector for elements that mark containers.
+ * @param {number} [maxLevels=12] - Maximum parent levels to walk up.
+ * @param {string} [verifySelector] - Optional second selector that must also exist in the container.
+ * @returns {HTMLElement[]} Array of unique container elements.
+ */
+export function getRepeatingContainers(anchorSelector, maxLevels = 12, verifySelector) {
+  const anchors = document.querySelectorAll(anchorSelector);
+  const containers = [];
+  const seen = new WeakSet();
+  for (const anchor of anchors) {
+    let el = anchor;
+    for (let i = 0; i < maxLevels; i++) {
+      if (!el.parentElement) break;
+      el = el.parentElement;
+      if (verifySelector && el.querySelector(verifySelector) && !seen.has(el)) {
+        seen.add(el);
+        containers.push(el);
+        break;
+      }
+    }
+    if (!verifySelector && !seen.has(el)) {
+      seen.add(el);
+      containers.push(el);
+    }
+  }
+  return containers;
+}
+
+// --- Menu & Settings Utilities (ALL MUST BE EXPORTED) ---
+
+/**
+ * Navigate through a cascade of menu items. Clicks each menu item in sequence,
+ * waiting between clicks for the next level to appear.
+ *
+ * Example: menuCascade(["Settings & privacy", "Display & accessibility"])
+ *
+ * @param {string[]} itemTexts - Array of menu item text labels to click in order.
+ * @param {number} [delay=500] - Delay between clicks in ms.
+ * @returns {Promise<{success: boolean, completedSteps: number, error?: string}>}
+ */
+export async function menuCascade(itemTexts, delay = 500) {
+  for (let i = 0; i < itemTexts.length; i++) {
+    await sleep(delay);
+    const items = document.querySelectorAll('[role="menuitem"], [role="option"], [role="button"]');
+    let found = false;
+    for (const item of items) {
+      if (item.textContent.trim().includes(itemTexts[i]) && item.offsetParent !== null) {
+        item.click();
+        found = true;
+        break;
+      }
+    }
+    if (!found) return { success: false, error: `Menu item "${itemTexts[i]}" not found`, completedSteps: i, category: 'selector_not_found' };
+  }
+  return { success: true, completedSteps: itemTexts.length };
+}
+
+/**
+ * Select a radio button by index within a group, returning __clickCoords
+ * for trusted browser-level click. Many radio buttons reject JS .click()
+ * because they check event.isTrusted.
+ *
+ * @param {string|string[]} groupSelector - Selector(s) for radio buttons (e.g., '[role="radio"]').
+ * @param {number} index - 0-based index of the radio to select.
+ * @returns {Object} Either { __clickCoords } for exec() or { success: false, error }.
+ */
+export function selectRadioByIndex(groupSelector, index) {
+  const radios = querySelectorAll(Array.isArray(groupSelector) ? groupSelector : [groupSelector]);
+  if (index < 0 || index >= radios.length) {
+    return { success: false, error: `Radio index ${index} out of range (${radios.length} found)`, category: 'selector_not_found' };
+  }
+  const target = radios[index];
+  const rect = target.getBoundingClientRect();
+  return {
+    __clickCoords: { x: Math.round(rect.x + rect.width / 2), y: Math.round(rect.y + rect.height / 2) }
+  };
+}
+
+/**
+ * Toggle a panel (open if closed, close if open) with state detection.
+ * Prevents double-toggle: checks if the panel is already in the desired state
+ * before clicking the trigger.
+ *
+ * @param {string|string[]} triggerSelector - Selector(s) for the toggle button.
+ * @param {string|string[]} panelSelector - Selector(s) for the panel element.
+ * @param {string} [action="open"] - "open" or "close".
+ * @returns {Promise<{success: boolean, state: string}>}
+ */
+export async function togglePanel(triggerSelector, panelSelector, action = "open") {
+  const panelSels = Array.isArray(panelSelector) ? panelSelector : [panelSelector];
+  const panel = querySelector(panelSels);
+  const isOpen = panel && panel.offsetParent !== null;
+  if (action === "open" && isOpen) return { success: true, state: "already_open" };
+  if (action === "close" && !isOpen) return { success: true, state: "already_closed" };
+  const trigger = querySelector(Array.isArray(triggerSelector) ? triggerSelector : [triggerSelector]);
+  if (!trigger) return { success: false, error: 'Toggle trigger not found', category: 'selector_not_found' };
+  trigger.click();
+  if (action === "open") {
+    try {
+      await waitForElement(panelSels, 3000);
+      return { success: true, state: "opened" };
+    } catch {
+      return { success: false, error: 'Panel did not open', category: 'timeout' };
+    }
+  } else {
+    try {
+      await waitForRemoval(panelSels[0], 3000);
+      return { success: true, state: "closed" };
+    } catch {
+      return { success: false, error: 'Panel did not close', category: 'timeout' };
+    }
+  }
+}
+
 // =============================================================================
 // LEARNED OPERATIONS
 // =============================================================================

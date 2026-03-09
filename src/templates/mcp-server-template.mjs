@@ -169,6 +169,49 @@ async function exec(fn, params = {}) {
       }
     }
 
+    // Hover support: when a command returns __hoverCoords, move the mouse to the
+    // coordinates and wait. Used for widgets that reveal UI on hover (reaction bars,
+    // tooltip menus, hover-activated dropdowns). Optionally re-evaluates __followUp.
+    if (result && result.__hoverCoords) {
+      const { x, y } = result.__hoverCoords;
+      await p.mouse.move(x, y);
+      await new Promise(r => setTimeout(r, result.__hoverDelay || 1500));
+      if (result.__followUp) {
+        result = await p.evaluate(new Function(`return (${result.__followUp})()`));
+      } else {
+        delete result.__hoverCoords;
+        delete result.__hoverDelay;
+      }
+    }
+
+    // Keyboard support: when a command returns __keyPress, send keyboard events
+    // through puppeteer. Used for search submissions, dialog confirmations, Escape
+    // to close, and other keyboard-driven interactions.
+    if (result && result.__keyPress) {
+      const keys = Array.isArray(result.__keyPress) ? result.__keyPress : [result.__keyPress];
+      for (const key of keys) {
+        await p.keyboard.press(key);
+        await new Promise(r => setTimeout(r, 200));
+      }
+      if (result.__followUp) {
+        result = await p.evaluate(new Function(`return (${result.__followUp})()`));
+      } else {
+        delete result.__keyPress;
+      }
+    }
+
+    // Navigation support: when a command returns __navigate, perform the navigation
+    // at the puppeteer level. This avoids the race condition of setting
+    // window.location.href inside evaluate() where the page starts unloading
+    // before the return value is captured.
+    if (result && result.__navigate) {
+      const targetUrl = result.__navigate;
+      await p.goto(targetUrl, { waitUntil: "networkidle2", timeout: 30000 });
+      _injectedPages.delete(p);
+      await _injectHelpers(p);
+      result = { success: true, navigatedTo: targetUrl };
+    }
+
     // Post-execution URL re-check: some operations navigate within the app
     // (e.g., Forms homepage -> editor). Re-inject helpers if URL changed.
     try {
