@@ -204,14 +204,35 @@ Every learned app makes the entire ecosystem more capable.
 
 ## For Contributors
 
-Want to add an MCP for your favorite web app?
+AutoWebMCP is a crowdsourced project. Every MCP server you contribute makes Claude
+smarter for everyone — your 5 minutes of learning saves thousands of hours of
+brittle computer use across the community.
 
-1. Clone this repo
-2. Run `/learn-webapp https://your-app.com` in Claude Code
-3. Approve the generated tools
-4. `git push`
+The catalogue grows with each contribution. When you learn an app and push it,
+every Claude Code user who clones this repo (or fetches from the remote catalogue)
+gets instant access to your MCP — no learning, no setup, no computer use fallback.
+The more apps we cover, the less Claude has to rely on screenshots and pixel-hunting.
 
-That's it. Your MCP server is now available to every Claude Code user.
+### How to contribute
+
+1. **Fork & clone** this repo
+2. **Learn** any web app: `/learn-webapp https://your-app.com`
+3. **Review** the generated tools — approve, remove, or request additions
+4. **Push & open a PR** — your MCP server is now available to the community
+
+### What makes a good contribution
+
+- **Popular apps** that many people use (Google Workspace, Notion, Jira, Figma, etc.)
+- **Complete coverage** — approve a generous set of tools, not just 2-3
+- **Validated tools** — make sure the generated tools actually work before pushing
+- **Clear naming** — use the app's natural name (`gmail`, `notion`, `figma`)
+
+### What happens when you contribute
+
+Your MCP server lands in `MCPs/<app-name>/` and gets registered in `catalogue.json`.
+Any Claude Code user who encounters that app will automatically download and use
+your MCP instead of falling back to computer use. They don't need to install
+anything — the `/webmcp` skill handles it.
 
 ## Learn More
 
