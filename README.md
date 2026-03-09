@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/banner.svg" alt="AutoWebMCP — Teach Claude a web app once. Use it forever." width="100%"/>
+<img src="docs/banner.jpg" alt="AutoWebMCP — Teach Claude a web app once. Use it forever." width="100%"/>
 
 # AutoWebMCP
 
@@ -11,7 +11,7 @@
 [![MCP](https://img.shields.io/badge/Model_Context_Protocol-MCP-blue)](https://docs.anthropic.com/en/docs/mcp)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-Skills-purple)](https://docs.anthropic.com/en/docs/claude-code)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Release](https://img.shields.io/badge/Release-v0.2.0-orange)](https://github.com/ApartsinProjects/AutoWebMCP/releases)
+[![Release](https://img.shields.io/badge/Release-v0.3.0-orange)](https://github.com/ApartsinProjects/AutoWebMCP/releases)
 
 </div>
 
