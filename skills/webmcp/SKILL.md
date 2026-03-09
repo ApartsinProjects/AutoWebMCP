@@ -294,7 +294,9 @@ haven't been downloaded yet.
 
    a. Read `<PROJECT_ROOT>/.mcp.json` (create it if it doesn't exist).
 
-   b. Add the MCP server entry automatically — do NOT ask the user, just do it:
+   b. Add the MCP server entry automatically — do NOT ask the user, just do it.
+      Use the `BROWSER_MODE` and `DATA_MODE` values from Step 0.4 (defaults:
+      `visible` and `user`):
 
       ```json
       {
@@ -305,8 +307,8 @@ haven't been downloaded yet.
             "args": ["<mcp.path>/index.mjs"],
             "env": {
               "CHROME_CDP_URL": "http://127.0.0.1:9222",
-              "BROWSER_MODE": "visible",
-              "DATA_MODE": "user"
+              "BROWSER_MODE": "<from Step 0.4>",
+              "DATA_MODE": "<from Step 0.4>"
             }
           }
         }
@@ -429,36 +431,30 @@ Options:
      and add them to the MCP before proceeding. (~2-5 min per tool)
   b) Skip missing — proceed with available tools only, skip actions that need
      missing tools
-  c) Use raw automation for gaps — use MCP tools where available, fall back to
-     browser automation for the missing ones
+  c) Use raw automation for gaps — use MCP tools where available, use standard
+     browser automation (clicking, typing) only for the missing operations
 ```
 
 ### 4.3 Handle User Choice
 
 **If user chooses (a) — Learn missing tools**:
 
-1. For each missing tool, follow the learn-webapp Phase 7 (Manual Tool Addition)
-   workflow directly — do NOT invoke `/learn-webapp` as a separate skill; instead
-   execute Phase 7's steps inline:
-   a. Navigate to the app in the browser (if not already there)
-   b. Explore: locate the UI elements needed for the missing operation
-   c. Define the operation (name, description, parameters, procedure, selectors)
-   d. Validate: execute the procedure at least once to confirm it works
-   e. Append the new function to `<PROJECT_ROOT>/MCPs/<APP_NAME>/server/commands.mjs`
-   f. Add the new tool registration to `<PROJECT_ROOT>/MCPs/<APP_NAME>/server/index.mjs`
-   g. Update `manifest.json` (add operation, increment count)
-   h. Update `exploration/log.json` (add exploration entries and inferred operation)
-   i. Update `catalogue.json` (bump `operationCount`)
+Delegate to the `/learn-webapp` skill. Do NOT perform learning inline — webmcp is
+a routing skill, not a learning skill.
 
-2. After all missing tools are learned, re-display the execution plan with all
-   statuses showing "available".
+1. Inform the user:
+   ```
+   I'll run /learn-webapp <url> to learn the missing tools.
+   After learning, you'll need to restart Claude Code for the new tools
+   to become available.
+   ```
 
-3. **IMPORTANT**: After modifying `commands.mjs` and `index.mjs`, the MCP server
-   process must be **restarted** for changes to take effect. Inform the user:
-   "New tools added. Please restart Claude Code (or restart the MCP server)
-   for the new tools to become available, then I'll continue with your request."
+2. Invoke `/learn-webapp <url>`. The learning skill handles exploration,
+   code generation, and MCP file updates (commands.mjs, index.mjs, manifest,
+   catalogue). It will present the user with the approval gate and commit option.
 
-4. After restart confirmation, proceed to Step 5 (Execute).
+3. After learning completes and Claude Code is restarted, re-run the original
+   request — the new tools will now be available.
 
 **If user chooses (b) — Skip missing**:
 
@@ -540,26 +536,35 @@ If any tool call failed, mark it with an error indicator:
 2. **No silent fallback**: If an MCP tool exists for an operation, use it.
    Never substitute raw clicks for a learned operation without telling the user.
 
-3. **Composability**: For complex tasks, break them into a sequence of MCP tool
+3. **Skill file immutability**: NEVER modify any skill files during execution.
+   The following are read-only at runtime:
+   - `.claude/skills/learn-webapp/SKILL.md` and `exploration-guide.md`
+   - `.claude/skills/webmcp/SKILL.md`
+   - `skills/learn-webapp/SKILL.md` and `exploration-guide.md`
+   - `skills/webmcp/SKILL.md`
+
+   Only MCP output files may be modified: `MCPs/*/`, `catalogue.json`, `.mcp.json`.
+
+4. **Composability**: For complex tasks, break them into a sequence of MCP tool
    calls. Check available tools via `show_scripts()` or the manifest, then chain
    the appropriate calls in order. For example, a multi-step task becomes:
    - `tool_A(...)` + `tool_B(...)` + `tool_C(...)` etc.
 
-4. **Coverage gaps**: If the MCP server doesn't have a tool for something the
-   user needs, note it and offer to learn it (follow Step 4.3(a) inline workflow).
+5. **Coverage gaps**: If the MCP server doesn't have a tool for something the
+   user needs, note it and offer to learn it by invoking `/learn-webapp`.
 
-5. **State awareness**: Some MCP tools depend on state (e.g., a formatting tool
+6. **State awareness**: Some MCP tools depend on state (e.g., a formatting tool
    may require text to be selected first). Sequence calls appropriately and use
    query/info tools from the MCP to check state when needed.
 
-6. **Multiple MCPs**: The catalogue supports multiple MCPs per application.
+7. **Multiple MCPs**: The catalogue supports multiple MCPs per application.
    If multiple exist, prefer the one with highest confidence and most operations.
    You can use tools from different MCPs for the same app if they cover different
    capabilities.
 
-7. **Error recovery**: If an MCP tool call fails:
+8. **Error recovery**: If an MCP tool call fails:
    - **Selector not found**: The app's UI may have changed. Report the error and
-     offer to re-learn the operation (follow Step 4.3(a) inline workflow).
+     offer to re-learn the operation via `/learn-webapp`.
    - **Page not loaded**: Verify the app is open in Chrome and the URL matches.
      Navigate to the correct URL and retry once.
    - **CDP connection error**: Check that Chrome is running with
@@ -621,10 +626,9 @@ If any tool call failed, mark it with an error indicator:
      c) Skip for now — continue without these tools
    ```
 
-   **If user chooses (a)**: For each failed tool, follow the Step 4.3(a) inline
-   learning workflow — explore the app, find the correct selectors, update
-   `commands.mjs`, `index.mjs`, and `manifest.json`. After fixing, inform the user
-   to restart Claude Code.
+   **If user chooses (a)**: Delegate to `/learn-webapp <url>` — the learning skill
+   handles exploration, selector updates, and MCP file changes. After fixing,
+   the user will need to restart Claude Code.
 
    **If user chooses (b)**: Suggest running `/learn-webapp <url>` and choosing
    option (c) "Validate & fix" from the re-learning menu.
