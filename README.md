@@ -12,6 +12,9 @@
 [![Claude Code](https://img.shields.io/badge/Claude_Code-Skills-purple)](https://docs.anthropic.com/en/docs/claude-code)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Release](https://img.shields.io/badge/Release-v0.3.0-orange)](https://github.com/ApartsinProjects/AutoWebMCP/releases)
+[![Read on Medium](https://img.shields.io/badge/Read-on_Medium-black?logo=medium)](https://medium.com/design-bootcamp/turning-web-apps-into-reusable-tools-with-autowebmcp-20df82dc6d7d)
+
+📰 **Featured in Design Bootcamp:** [*Turning Web Apps into Reusable Tools with AutoWebMCP*](https://medium.com/design-bootcamp/turning-web-apps-into-reusable-tools-with-autowebmcp-20df82dc6d7d)
 
 </div>
 
